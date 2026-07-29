@@ -20,7 +20,7 @@ def run_flask():
 Thread(target=run_flask, daemon=True).start()
 
 # --- PUMP.FUN POSLUŠALEC ---
-N8N_WEBHOOK_URL = "https://cash4financialfreedom.hooks.n8n.cloud/webhook/pump-listener"
+N8N_WEBHOOK_URL = "https://alphasniffer.app.n8n.cloud/webhook/6bf47bed-b6a7-4bfa-acea-e49debdbe34"
 
 async def listen_pump():
     uri = "wss://pumpportal.fun/api/data"
@@ -44,7 +44,7 @@ async def listen_pump():
                         print(f"Napaka pri obdelavi sporočila: {e}")
                         
         except Exception as e:
-            print(f"Povezava s prekinjena ({e}), ponovni poskus čez 5 sekund...")
+            print(f"Povezava prekineja ({e}), ponovni poskus čez 5 sekund...")
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
