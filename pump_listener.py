@@ -23,14 +23,22 @@ async def listen_pump():
             async for message in websocket:
                 data = json.loads(message)
                 
-                # Check if data contains info about a new token
-                if "signature" in data or "mint" in data:
-                    print(f"New token detected: {data.get('mint', 'Unknown')}")
+                # Check if data contains token information
+                if isinstance(data, dict) and "mint" in data:
+                    print(f"New token detected: {data.get('symbol', 'Unknown')} - {data.get('mint')}")
+                    
+                    # Format data clearly for n8n
+                    payload_to_n8n = {
+                        "name": data.get("name", "Unknown"),
+                        "symbol": data.get("symbol", "Unknown"),
+                        "mint": data.get("mint", ""),
+                        "uri": data.get("uri", "")
+                    }
                     
                     # Send data to n8n Webhook
                     async with aiohttp.ClientSession() as session:
                         try:
-                            async with session.post(N8N_WEBHOOK_URL, json=data) as response:
+                            async with session.post(N8N_WEBHOOK_URL, json=payload_to_n8n) as response:
                                 print(f"Sent to n8n! Status: {response.status}")
                         except Exception as e:
                             print(f"Error sending to n8n: {e}")
