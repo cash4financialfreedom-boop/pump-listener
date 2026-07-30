@@ -8,7 +8,7 @@ from aiohttp import web
 N8N_WEBHOOK_URL = "https://n8n-app-ok4t.onrender.com/webhook/6bf47bed-b6a7-4bfa-acea-e49deebdbe34"
 
 # Set threshold in SOL (e.g. 100 SOL in bonding curve is roughly $20k MC depending on SOL price)
-MIN_MARKET_CAP_SOL = 100.0
+MIN_MARKET_CAP_SOL = 270.0
 
 # Keep track of tokens we already alerted to avoid spamming the same token
 alerted_tokens = set()
