@@ -5,49 +5,56 @@ import aiohttp
 import os
 from aiohttp import web
 
-# Your new Webhook URL from your Render n8n server:
 N8N_WEBHOOK_URL = "https://n8n-app-ok4t.onrender.com/webhook/6bf47bed-b6a7-4bfa-acea-e49deebdbe34"
+
+# Set threshold in SOL (e.g. 100 SOL in bonding curve is roughly $20k MC depending on SOL price)
+MIN_MARKET_CAP_SOL = 100.0
+
+# Keep track of tokens we already alerted to avoid spamming the same token
+alerted_tokens = set()
 
 async def listen_pump():
     uri = "wss://pumpportal.fun/api/data"
     
     async for websocket in websockets.connect(uri):
         try:
-            # Subscribe to new tokens on pump.fun
+            # Subscribe to trades instead of just new tokens to measure volume/MC growth
             payload = {
-                "method": "subscribeNewToken"
+                "method": "subscribeTokenTrade"
             }
             await websocket.send(json.dumps(payload))
-            print("Connected to PumpPortal WebSocket... Listening for new tokens.")
+            print("Connected to PumpPortal... Monitoring trade volume for $20k+ MC.")
 
             async for message in websocket:
                 data = json.loads(message)
                 
-                # Check if data contains token information
                 if isinstance(data, dict) and "mint" in data:
-                    print(f"New token detected: {data.get('symbol', 'Unknown')} - {data.get('mint')}")
+                    mint = data.get("mint")
+                    market_cap_sol = data.get("marketCapSol", 0)
                     
-                    # Format data clearly for n8n
-                    payload_to_n8n = {
-                        "name": data.get("name", "Unknown"),
-                        "symbol": data.get("symbol", "Unknown"),
-                        "mint": data.get("mint", ""),
-                        "uri": data.get("uri", "")
-                    }
-                    
-                    # Send data to n8n Webhook
-                    async with aiohttp.ClientSession() as session:
-                        try:
-                            async with session.post(N8N_WEBHOOK_URL, json=payload_to_n8n) as response:
-                                print(f"Sent to n8n! Status: {response.status}")
-                        except Exception as e:
-                            print(f"Error sending to n8n: {e}")
+                    # Check if market cap reached threshold and hasn't been sent yet
+                    if market_cap_sol >= MIN_MARKET_CAP_SOL and mint not in alerted_tokens:
+                        alerted_tokens.add(mint)
+                        print(f"🔥 HIGH MC TOKEN DETECTED ({market_cap_sol} SOL): {data.get('symbol')} - {mint}")
+                        
+                        payload_to_n8n = {
+                            "name": data.get("name", "Unknown"),
+                            "symbol": data.get("symbol", "Unknown"),
+                            "mint": mint,
+                            "uri": data.get("uri", ""),
+                            "marketCapSol": market_cap_sol
+                        }
+                        
+                        async with aiohttp.ClientSession() as session:
+                            try:
+                                async with session.post(N8N_WEBHOOK_URL, json=payload_to_n8n) as response:
+                                    print(f"Sent to n8n! Status: {response.status}")
+                            except Exception as e:
+                                print(f"Error sending to n8n: {e}")
 
         except websockets.ConnectionClosed:
-            print("Connection closed, reconnecting in 5 seconds...")
             await asyncio.sleep(5)
         except Exception as e:
-            print(f"Unexpected error: {e}")
             await asyncio.sleep(5)
 
 async def handle_ping(request):
