@@ -1,24 +1,21 @@
 import asyncio
 import json
 import os
-import threading
 import websockets
 import requests
-from flask import Flask
+from aiohttp import web
 
-# Flask app to keep Render Web Service happy
-app = Flask(__name__)
-
-# Replace with your actual n8n Webhook URL if needed
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://alphasniffer.app.n8n.cloud/webhook/6bf47bed-b6a7-4bfa-acea-e49debdbe34")
 
-@app.route('/')
-def health_check():
-    return "Pump Listener is active and running 24/7!", 200
+# Basic HTTP handler for Render health checks
+async def handle_ping(request):
+    return web.Response(text="Pump Listener is active!")
 
-def send_to_n8n(data):
+async def send_to_n8n(data):
     try:
-        requests.post(N8N_WEBHOOK_URL, json=data, timeout=5)
+        # Run blocking post request in default executor so asyncio loop stays fast
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: requests.post(N8N_WEBHOOK_URL, json=data, timeout=5))
     except Exception as e:
         print(f"Error sending payload to n8n: {e}")
 
@@ -27,7 +24,7 @@ async def listen_pump():
     while True:
         try:
             async with websockets.connect(uri) as websocket:
-                print(" Connected to Pump.fun! Listening for new tokens...")
+                print("Connected to Pump.fun! Listening for new tokens...")
                 payload = {"method": "subscribeNewToken"}
                 await websocket.send(json.dumps(payload))
 
@@ -37,10 +34,8 @@ async def listen_pump():
                         if "mint" in data:
                             token_name = data.get('name', 'Unknown')
                             token_symbol = data.get('symbol', '')
-                            print(f" New token detected: {token_name} ({token_symbol})")
-                            
-                            # Run HTTP request in a background thread so asyncio loop doesn't freeze
-                            threading.Thread(target=send_to_n8n, args=(data,)).start()
+                            print(f"New token detected: {token_name} ({token_symbol})")
+                            asyncio.create_task(send_to_n8n(data))
 
                     except Exception as e:
                         print(f"Error processing message: {e}")
@@ -49,15 +44,21 @@ async def listen_pump():
             print(f"Connection dropped ({e}), retrying in 5 seconds...")
             await asyncio.sleep(5)
 
-def start_async_loop():
-    asyncio.run(listen_pump())
+async def start_background_tasks(app):
+    app['pump_task'] = asyncio.create_task(listen_pump())
+
+async def cleanup_background_tasks(app):
+    app['pump_task'].cancel()
+    await app['pump_task']
+
+def main():
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    app.on_startup.append(start_background_tasks)
+    app.on_cleanup.append(cleanup_background_tasks)
+
+    port = int(os.environ.get("PORT", 10000))
+    web.run_app(app, host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    # Start WebSocket listener in a separate background thread
-    listener_thread = threading.Thread(target=start_async_loop)
-    listener_thread.daemon = True
-    listener_thread.start()
-
-    # Start Flask Web Server for Render
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    main()
