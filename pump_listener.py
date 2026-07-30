@@ -7,13 +7,11 @@ from aiohttp import web
 
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://alphasniffer.app.n8n.cloud/webhook/6bf47bed-b6a7-4bfa-acea-e49debdbe34")
 
-# Basic HTTP handler for Render health checks
 async def handle_ping(request):
     return web.Response(text="Pump Listener is active!")
 
 async def send_to_n8n(data):
     try:
-        # Run blocking post request in default executor so asyncio loop stays fast
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, lambda: requests.post(N8N_WEBHOOK_URL, json=data, timeout=5))
     except Exception as e:
