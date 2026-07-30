@@ -1,46 +1,49 @@
 import asyncio
-import json
-import os
 import websockets
-import requests
+import json
+import aiohttp
+import os
 from aiohttp import web
 
-N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://alphasniffer.app.n8n.cloud/webhook/6bf47bed-b6a7-4bfa-acea-e49debdbe34")
-
-async def handle_ping(request):
-    return web.Response(text="Pump Listener is active!")
-
-async def send_to_n8n(data):
-    try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: requests.post(N8N_WEBHOOK_URL, json=data, timeout=5))
-    except Exception as e:
-        print(f"Error sending payload to n8n: {e}")
+# Your new Webhook URL from your Render n8n server:
+N8N_WEBHOOK_URL = "https://n8n-app-ok4t.onrender.com/webhook/6bf47bed-b6a7-4bfa-acea-e49deebdbe34"
 
 async def listen_pump():
     uri = "wss://pumpportal.fun/api/data"
-    while True:
+    
+    async for websocket in websockets.connect(uri):
         try:
-            async with websockets.connect(uri) as websocket:
-                print("Connected to Pump.fun! Listening for new tokens...")
-                payload = {"method": "subscribeNewToken"}
-                await websocket.send(json.dumps(payload))
+            # Subscribe to new tokens on pump.fun
+            payload = {
+                "method": "subscribeNewToken"
+            }
+            await websocket.send(json.dumps(payload))
+            print("Connected to PumpPortal WebSocket... Listening for new tokens.")
 
-                async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        if "mint" in data:
-                            token_name = data.get('name', 'Unknown')
-                            token_symbol = data.get('symbol', '')
-                            print(f"New token detected: {token_name} ({token_symbol})")
-                            asyncio.create_task(send_to_n8n(data))
+            async for message in websocket:
+                data = json.loads(message)
+                
+                # Check if data contains info about a new token
+                if "signature" in data or "mint" in data:
+                    print(f"New token detected: {data.get('mint', 'Unknown')}")
+                    
+                    # Send data to n8n Webhook
+                    async with aiohttp.ClientSession() as session:
+                        try:
+                            async with session.post(N8N_WEBHOOK_URL, json=data) as response:
+                                print(f"Sent to n8n! Status: {response.status}")
+                        except Exception as e:
+                            print(f"Error sending to n8n: {e}")
 
-                    except Exception as e:
-                        print(f"Error processing message: {e}")
-
-        except Exception as e:
-            print(f"Connection dropped ({e}), retrying in 5 seconds...")
+        except websockets.ConnectionClosed:
+            print("Connection closed, reconnecting in 5 seconds...")
             await asyncio.sleep(5)
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            await asyncio.sleep(5)
+
+async def handle_ping(request):
+    return web.Response(text="Pump Listener is running!")
 
 async def start_background_tasks(app):
     app['pump_task'] = asyncio.create_task(listen_pump())
