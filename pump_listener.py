@@ -7,55 +7,64 @@ import websockets
 import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# Prisilni takojšnji izpis vseh dnevnikov v Render
+# Immediate line buffering for logs in Render
 sys.stdout.reconfigure(line_buffering=True)
 
-# 1. MINIMALNI STREŽNIK ZA RENDER (Port 10000)
+# 1. MINIMAL HEALTH CHECK SERVER FOR RENDER (Port 10000)
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
+        
     def log_message(self, format, *args):
-        return
+        return  # Suppress HTTP health check log noise
 
-def start_health_server():
+def run_health_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), HealthHandler)
-    print(f"--> [SYSTEM] Port {port} sproščen in aktiven.", flush=True)
+    print(f"--> Health check server running on port {port}")
     server.serve_forever()
 
-# Zaženemo v ozadju
-threading.Thread(target=start_health_server, daemon=True).start()
+# 2. PUMPPORTAL WEBSOCKET LISTENER FOR RAYDIUM MIGRATIONS
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://n8n-app-ok4t.onrender.com/webhook/pump-data")
 
-# 2. WEBSOCKET LISTENER ZA PUMP.FUN
-N8N_URL = os.environ.get("N8N_WEBHOOK_URL", "https://n8n-app-ok4t.onrender.com/webhook/57fb4234-1188-44a0-a61d-381a17fa6b70")
-PUMP_URL = "wss://pumpportal.fun/api/data"
-
-async def main():
-    print("--> [START] Skripta se zaganja...", flush=True)
+async def listen_raydium_migrations():
+    uri = "wss://pumpportal.fun/api/data"
+    
     while True:
         try:
-            print("--> [PUMP] Povezovanje na WebSocket...", flush=True)
-            async with websockets.connect(PUMP_URL) as ws:
-                await ws.send(json.dumps({"method": "subscribeNewToken"}))
-                print("--> [PUMP] POVEZANO! Poslušam nove kovance...", flush=True)
-
-                while True:
-                    msg = await ws.recv()
-                    data = json.loads(msg)
-                    sym = data.get("symbol", "N/A")
-                    print(f"--> [ZAZNAN KOVANEC] {sym} -> Pošiljam v n8n...", flush=True)
-
-                    try:
-                        res = requests.post(N8N_URL, json=data, timeout=5)
-                        print(f"--> [N8N ODGOVOR] Status: {res.status_code}", flush=True)
-                    except Exception as err:
-                        print(f"--> [N8N NAPAKA] {err}", flush=True)
-
+            async with websockets.connect(uri) as websocket:
+                print("--> Connected to PumpPortal WebSocket. Subscribing to Raydium migrations...")
+                
+                # Subscribe exclusively to Raydium liquidity migration events
+                payload = {
+                    "method": "subscribeRaydiumLiquidity"
+                }
+                await websocket.send(json.dumps(payload))
+                
+                async for message in websocket:
+                    data = json.loads(message)
+                    
+                    # Verify if liquidity was successfully added to Raydium
+                    if "signature" in data or "mint" in data:
+                        mint = data.get("mint", "Unknown Mint")
+                        print(f"🚀 [RAYDIUM MIGRATION DETECTED] Token: {mint} -> Sending to n8n...")
+                        
+                        try:
+                            # Forward event payload to n8n for GPT analysis
+                            response = requests.post(N8N_WEBHOOK_URL, json=data, timeout=5)
+                            print(f"--> [N8N RESPONSE] Status: {response.status_code}")
+                        except Exception as e:
+                            print(f"--> Error sending data to n8n: {e}")
+                            
         except Exception as e:
-            print(f"--> [NAPAKA PREKINITVE] {e}. Ponoven poskus čez 5s...", flush=True)
+            print(f"--> Connection dropped ({e}). Reconnecting in 5 seconds...")
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Start health server in a background thread for Render
+    threading.Thread(target=run_health_server, daemon=True).start()
+    
+    # Run the WebSocket listener
+    asyncio.run(listen_raydium_migrations())
