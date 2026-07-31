@@ -1,80 +1,73 @@
 import asyncio
-import websockets
 import json
-import aiohttp
 import os
-from aiohttp import web
+import threading
+import websockets
+import requests
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-N8N_WEBHOOK_URL = "https://n8n-app-ok4t.onrender.com/webhook/6bf47bed-b6a7-4bfa-acea-e49deebdbe34"
+# ==========================================
+# 1. HEALTH CHECK SERVER FOR RENDER (PORT 10000)
+# ==========================================
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
 
-# Set threshold in SOL (e.g. 100 SOL in bonding curve is roughly $20k MC depending on SOL price)
-MIN_MARKET_CAP_SOL = 270.0
+    def log_message(self, format, *args):
+        # Disable cluttering HTTP request logs in the Render console
+        return
 
-# Keep track of tokens we already alerted to avoid spamming the same token
-alerted_tokens = set()
-
-async def listen_pump():
-    uri = "wss://pumpportal.fun/api/data"
-    
-    async for websocket in websockets.connect(uri):
-        try:
-            # Subscribe to trades instead of just new tokens to measure volume/MC growth
-            payload = {
-                "method": "subscribeTokenTrade"
-            }
-            await websocket.send(json.dumps(payload))
-            print("Connected to PumpPortal... Monitoring trade volume for $20k+ MC.")
-
-            async for message in websocket:
-                data = json.loads(message)
-                
-                if isinstance(data, dict) and "mint" in data:
-                    mint = data.get("mint")
-                    market_cap_sol = data.get("marketCapSol", 0)
-                    
-                    # Check if market cap reached threshold and hasn't been sent yet
-                    if market_cap_sol >= MIN_MARKET_CAP_SOL and mint not in alerted_tokens:
-                        alerted_tokens.add(mint)
-                        print(f"🔥 HIGH MC TOKEN DETECTED ({market_cap_sol} SOL): {data.get('symbol')} - {mint}")
-                        
-                        payload_to_n8n = {
-                            "name": data.get("name", "Unknown"),
-                            "symbol": data.get("symbol", "Unknown"),
-                            "mint": mint,
-                            "uri": data.get("uri", ""),
-                            "marketCapSol": market_cap_sol
-                        }
-                        
-                        async with aiohttp.ClientSession() as session:
-                            try:
-                                async with session.post(N8N_WEBHOOK_URL, json=payload_to_n8n) as response:
-                                    print(f"Sent to n8n! Status: {response.status}")
-                            except Exception as e:
-                                print(f"Error sending to n8n: {e}")
-
-        except websockets.ConnectionClosed:
-            await asyncio.sleep(5)
-        except Exception as e:
-            await asyncio.sleep(5)
-
-async def handle_ping(request):
-    return web.Response(text="Pump Listener is running!")
-
-async def start_background_tasks(app):
-    app['pump_task'] = asyncio.create_task(listen_pump())
-
-async def cleanup_background_tasks(app):
-    app['pump_task'].cancel()
-    await app['pump_task']
-
-def main():
-    app = web.Application()
-    app.router.add_get('/', handle_ping)
-    app.on_startup.append(start_background_tasks)
-    app.on_cleanup.append(cleanup_background_tasks)
-
+def run_health_check():
     port = int(os.environ.get("PORT", 10000))
-    web.run_app(app, host="0.0.0.0", port=port)
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    print(f"--> [SYSTEM] Health Check server successfully running on port {port}")
+    server.serve_forever()
+
+# Run Health Check server in a background thread
+threading.Thread(target=run_health_check, daemon=True).start()
+
+# ==========================================
+# 2. CONFIGURATION & WEBSOCKET LISTENER
+# ==========================================
+# Get n8n Webhook URL from Render Environment Variables (or use fallback)
+N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "YOUR_N8N_WEBHOOK_URL_HERE")
+PUMP_PORTAL_URL = "wss://pumpportal.fun/api/data"
+
+async def listen_pump_portal():
+    while True:
+        try:
+            print("--> [PUMPPORTAL] Connecting to WebSocket...")
+            async with websockets.connect(PUMP_PORTAL_URL) as ws:
+                # Subscribe to new token creations
+                payload = {"method": "subscribeNewToken"}
+                await ws.send(json.dumps(payload))
+                print("--> [PUMPPORTAL] Successfully connected! Listening for new tokens...")
+
+                while True:
+                    message = await ws.recv()
+                    data = json.loads(message)
+
+                    # Console output for verification
+                    token_symbol = data.get("symbol", "N/A")
+                    mint = data.get("mint", "N/A")
+                    print(f"--> [NEW TOKEN] Detected: {token_symbol} ({mint})")
+
+                    # Send token data to n8n for analysis
+                    try:
+                        response = requests.post(N8N_WEBHOOK_URL, json=data, timeout=5)
+                        if response.status_code == 200:
+                            print(f"--> [N8N] Data for {token_symbol} successfully sent to n8n.")
+                        else:
+                            print(f"--> [N8N WARNING] n8n returned status code: {response.status_code}")
+                    except Exception as req_err:
+                        print(f"--> [N8N ERROR] Failed to send data to n8n: {req_err}")
+
+        except Exception as e:
+            print(f"[ERROR] Connection lost/failed: {e}")
+            print("--> Reconnecting in 5 seconds...")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(listen_pump_portal())
