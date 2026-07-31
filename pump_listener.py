@@ -1,73 +1,61 @@
 import asyncio
 import json
 import os
+import sys
 import threading
 import websockets
 import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# ==========================================
-# 1. HEALTH CHECK SERVER FOR RENDER (PORT 10000)
-# ==========================================
-class HealthCheckHandler(BaseHTTPRequestHandler):
+# Prisilni takojšnji izpis vseh dnevnikov v Render
+sys.stdout.reconfigure(line_buffering=True)
+
+# 1. MINIMALNI STREŽNIK ZA RENDER (Port 10000)
+class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
-
     def log_message(self, format, *args):
-        # Onemogoči smetenje HTTP logov v Render konzoli
         return
 
-def run_health_check():
+def start_health_server():
     port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    print(f"--> [SYSTEM] Health Check server successfully running on port {port}")
+    server = HTTPServer(('0.0.0.0', port), HealthHandler)
+    print(f"--> [SYSTEM] Port {port} sproščen in aktiven.", flush=True)
     server.serve_forever()
 
-# Zaženemo Health Check v ločeni niti (thread-u)
-threading.Thread(target=run_health_check, daemon=True).start()
+# Zaženemo v ozadju
+threading.Thread(target=start_health_server, daemon=True).start()
 
-# ==========================================
-# 2. CONFIGURATION & WEBSOCKET LISTENER
-# ==========================================
-# n8n Webhook URL pridobi iz okoljskih spremenljivk na Renderju (ali uporabi rezervni URL)
-N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "YOUR_N8N_WEBHOOK_URL_HERE")
-PUMP_PORTAL_URL = "wss://pumpportal.fun/api/data"
+# 2. WEBSOCKET LISTENER ZA PUMP.FUN
+N8N_URL = os.environ.get("N8N_WEBHOOK_URL", "https://n8n-app-ok4t.onrender.com/webhook/57fb4234-1188-44a0-a61d-381a17fa6b70")
+PUMP_URL = "wss://pumpportal.fun/api/data"
 
-async def listen_pump_portal():
+async def main():
+    print("--> [START] Skripta se zaganja...", flush=True)
     while True:
         try:
-            print("--> [PUMPPORTAL] Connecting to WebSocket...")
-            async with websockets.connect(PUMP_PORTAL_URL) as ws:
-                # Naročimo se na ustvarjanje novih žetonov (New Tokens)
-                payload = {"method": "subscribeNewToken"}
-                await ws.send(json.dumps(payload))
-                print("--> [PUMPPORTAL] Successfully connected! Listening for new tokens...")
+            print("--> [PUMP] Povezovanje na WebSocket...", flush=True)
+            async with websockets.connect(PUMP_URL) as ws:
+                await ws.send(json.dumps({"method": "subscribeNewToken"}))
+                print("--> [PUMP] POVEZANO! Poslušam nove kovance...", flush=True)
 
                 while True:
-                    message = await ws.recv()
-                    data = json.loads(message)
+                    msg = await ws.recv()
+                    data = json.loads(msg)
+                    sym = data.get("symbol", "N/A")
+                    print(f"--> [ZAZNAN KOVANEC] {sym} -> Pošiljam v n8n...", flush=True)
 
-                    # Izpis v konzolo za preverjanje delovanja
-                    token_symbol = data.get("symbol", "N/A")
-                    mint = data.get("mint", "N/A")
-                    print(f"--> [NEW TOKEN] Detected: {token_symbol} ({mint})")
-
-                    # Pošiljanje podatkov v n8n za nadaljnjo obdelavo
                     try:
-                        response = requests.post(N8N_WEBHOOK_URL, json=data, timeout=5)
-                        if response.status_code == 200:
-                            print(f"--> [N8N] Data for {token_symbol} successfully sent to n8n.")
-                        else:
-                            print(f"--> [N8N WARNING] n8n returned status code: {response.status_code}")
-                    except Exception as req_err:
-                        print(f"--> [N8N ERROR] Failed to send data to n8n: {req_err}")
+                        res = requests.post(N8N_URL, json=data, timeout=5)
+                        print(f"--> [N8N ODGOVOR] Status: {res.status_code}", flush=True)
+                    except Exception as err:
+                        print(f"--> [N8N NAPAKA] {err}", flush=True)
 
         except Exception as e:
-            print(f"[ERROR] Connection lost/failed: {e}")
-            print("--> Reconnecting in 5 seconds...")
+            print(f"--> [NAPAKA PREKINITVE] {e}. Ponoven poskus čez 5s...", flush=True)
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    asyncio.run(listen_pump_portal())
+    asyncio.run(main())
