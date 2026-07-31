@@ -16,7 +16,7 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"OK")
 
     def log_message(self, format, *args):
-        # Disable cluttering HTTP request logs in the Render console
+        # Onemogoči smetenje HTTP logov v Render konzoli
         return
 
 def run_health_check():
@@ -25,13 +25,13 @@ def run_health_check():
     print(f"--> [SYSTEM] Health Check server successfully running on port {port}")
     server.serve_forever()
 
-# Run Health Check server in a background thread
+# Zaženemo Health Check v ločeni niti (thread-u)
 threading.Thread(target=run_health_check, daemon=True).start()
 
 # ==========================================
 # 2. CONFIGURATION & WEBSOCKET LISTENER
 # ==========================================
-# Get n8n Webhook URL from Render Environment Variables (or use fallback)
+# n8n Webhook URL pridobi iz okoljskih spremenljivk na Renderju (ali uporabi rezervni URL)
 N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "YOUR_N8N_WEBHOOK_URL_HERE")
 PUMP_PORTAL_URL = "wss://pumpportal.fun/api/data"
 
@@ -40,7 +40,7 @@ async def listen_pump_portal():
         try:
             print("--> [PUMPPORTAL] Connecting to WebSocket...")
             async with websockets.connect(PUMP_PORTAL_URL) as ws:
-                # Subscribe to new token creations
+                # Naročimo se na ustvarjanje novih žetonov (New Tokens)
                 payload = {"method": "subscribeNewToken"}
                 await ws.send(json.dumps(payload))
                 print("--> [PUMPPORTAL] Successfully connected! Listening for new tokens...")
@@ -49,12 +49,12 @@ async def listen_pump_portal():
                     message = await ws.recv()
                     data = json.loads(message)
 
-                    # Console output for verification
+                    # Izpis v konzolo za preverjanje delovanja
                     token_symbol = data.get("symbol", "N/A")
                     mint = data.get("mint", "N/A")
                     print(f"--> [NEW TOKEN] Detected: {token_symbol} ({mint})")
 
-                    # Send token data to n8n for analysis
+                    # Pošiljanje podatkov v n8n za nadaljnjo obdelavo
                     try:
                         response = requests.post(N8N_WEBHOOK_URL, json=data, timeout=5)
                         if response.status_code == 200:
