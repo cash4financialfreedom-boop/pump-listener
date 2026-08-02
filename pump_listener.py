@@ -2,8 +2,19 @@ import os
 import time
 import json
 import requests
-import asyncio
-import websockets
+import threading
+from flask import Flask
+
+# Flask app to satisfy Render's port check
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Bot is running perfectly!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 # Configuration
 N8N_WEBHOOK_URL = "https://n8n-app-ok4t.onrender.com/webhook/jYXi3ljaQnh9xOpG"
@@ -38,7 +49,6 @@ def process_token_migration(token_data):
 
     print(f"\n🚀 [RAYDIUM MIGRATION DETECTED] Token: {name} (${symbol}) | Mint: {mint}")
 
-    # Short delay to give DexScreener time to index the new liquidity pair
     time.sleep(3)
 
     market_cap = get_token_market_cap(mint)
@@ -65,16 +75,15 @@ def process_token_migration(token_data):
     else:
         print(f"⛔ [REJECTED] Market cap (${market_cap:,.2f}) is below the ${MIN_MARKET_CAP_USD:,.0f} threshold.")
 
-# Main Execution / WebSocket Listener Example
 if __name__ == "__main__":
+    # Start Flask server in a background thread for Render health check
+    threading.Thread(target=run_flask, daemon=True).start()
+    
     print(f"🟢 [SYSTEM ACTIVE] Pump.fun migration listener started.")
     print(f"🎯 [FILTER SET] Minimum Market Cap threshold: ${MIN_MARKET_CAP_USD:,.0f}")
     
-    # Keep service running on Render
     while True:
         try:
-            # Main event loop runs here
             time.sleep(1)
         except KeyboardInterrupt:
-            print("Stopping listener...")
             break
