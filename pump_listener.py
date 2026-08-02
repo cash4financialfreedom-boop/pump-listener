@@ -1,95 +1,126 @@
-import os
-import time
-import json
-import requests
-import threading
 import asyncio
-import websockets
-from flask import Flask
+import logging
+import aiohttp
 
-# ------------------------------------------------------------------------------
-# CONFIGURATION
-# ------------------------------------------------------------------------------
-N8N_WEBHOOK_URL = "https://n8n-app-ok4t.onrender.com/webhook/jyxi3ljaQnh9xOpG"
-MIN_MARKET_CAP_USD = 20000.0  # Updated threshold to $20k USD
-PUMP_WS_URI = "wss://pumpportal.fun/api/data"
+# ==========================================
+# CONFIGURATION SETTINGS
+# ==========================================
+TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "YOUR_TELEGRAM_CHAT_ID"
 
-# Set to store recently processed tokens to prevent duplicate alerts
-processed_mints = set()
+# Filter Thresholds
+MIN_MARKET_CAP_USD = 40000.0  # Minimum $40k Market Cap
+CHECK_INTERVAL_SECONDS = 5    # Polling frequency in seconds
 
-# ------------------------------------------------------------------------------
-# FLASK SERVER (Satisfies Render Port Check)
-# ------------------------------------------------------------------------------
-app = Flask(__name__)
+# API Endpoints
+DEX_SCREENER_API = "https://api.dexscreener.com/latest/dex/tokens/"
+# Add any specific list of newly migrated contract addresses to monitor, or hook into your WebSocket/RPC feed
+WATCH_LIST = [
+    # Example Contract Addresses (CAs) to track
+]
 
-@app.route('/')
-def health_check():
-    return "Pump Listener is running healthy!", 200
+# Configure Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+# Keep track of already notified tokens to prevent spam
+notified_tokens = set()
 
-# ------------------------------------------------------------------------------
-# WEBSOCKET & SIGNAL PROCESSING
-# ------------------------------------------------------------------------------
-def process_token_data(data):
-    """Processes incoming token payload without GPT interference."""
-    mint = data.get("mint")
-    if not mint or mint in processed_mints:
-        return
 
-    # Extract market cap or valuation parameters
-    market_cap = data.get("marketCapSol") or data.get("usd_market_cap") or data.get("vTokensInBondingCurve", 0)
-    
-    # Check if market cap meets the updated $20k threshold
-    if market_cap and float(market_cap) >= MIN_MARKET_CAP_USD:
-        print(f"[MATCH FOUND] Token: {mint} | Market Cap: {market_cap}", flush=True)
-        processed_mints.add(mint)
-        
-        # Send payload straight to n8n Webhook / Telegram Pipeline
-        try:
-            response = requests.post(N8N_WEBHOOK_URL, json=data, timeout=10)
-            print(f"[SENT TO N8N] Status Code: {response.status_code}", flush=True)
-        except Exception as e:
-            print(f"[ERROR] Failed to send webhook: {e}", flush=True)
+async def send_telegram_alert(token_data: dict):
+    """
+    Sends a formatted alert message to Telegram.
+    """
+    message = (
+        f"🚨 **HIGH-VALUE MIGRATION DETECTED** 🚨\n\n"
+        f"🪙 **Token:** {token_data['name']} (`${token_data['symbol']}`)\n"
+        f"💰 **Market Cap:** ${token_data['market_cap']:,.2f}\n"
+        f"💧 **Liquidity:** ${token_data['liquidity']:,.2f}\n"
+        f"📊 **5M Volume:** ${token_data['volume_5m']:,.2f}\n"
+        f"🔄 **5M Transactions:** {token_data['buys_5m']} Buys / {token_data['sells_5m']} Sells\n\n"
+        f"📝 **CA:** `{token_data['address']}`\n\n"
+        f"🔗 [View on DEX Screener](https://dexscreener.com/solana/{token_data['address']})"
+    )
 
-async def listen_pump_websocket():
-    """Connects to PumpPortal WebSocket and listens for token events."""
-    while True:
-        try:
-            async with websockets.connect(PUMP_WS_URI) as websocket:
-                print("[CONNECTED] Listening to PumpPortal WebSocket...", flush=True)
-                
-                # Subscribe to new token trades / migration events
-                payload = {
-                    "method": "subscribeNewToken"
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": True
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload) as response:
+                if response.status == 200:
+                    logging.info(f"Successfully sent Telegram alert for {token_data['symbol']}")
+                else:
+                    logging.error(f"Failed to send Telegram alert: Status {response.status}")
+    except Exception as e:
+        logging.error(f"Error sending Telegram message: {e}")
+
+
+async def fetch_token_metrics(session: aiohttp.ClientSession, token_address: str):
+    """
+    Fetches live token data from DEX Screener API and checks criteria.
+    """
+    url = f"{DEX_SCREENER_API}{token_address}"
+    try:
+        async with session.get(url) as response:
+            if response.status != 200:
+                return
+
+            data = await response.json()
+            pairs = data.get("pairs")
+
+            if not pairs:
+                return
+
+            # Grab the primary DEX pair (PumpSwap or Raydium)
+            pair = pairs[0]
+            market_cap = float(pair.get("fdv", 0) or 0)
+
+            # Filter Check: Must be >= $40,000 USD Market Cap
+            if market_cap >= MIN_MARKET_CAP_USD and token_address not in notified_tokens:
+                token_info = {
+                    "name": pair.get("baseToken", {}).get("name", "Unknown"),
+                    "symbol": pair.get("baseToken", {}).get("symbol", "UNKNOWN"),
+                    "address": token_address,
+                    "market_cap": market_cap,
+                    "liquidity": float(pair.get("liquidity", {}).get("usd", 0) or 0),
+                    "volume_5m": float(pair.get("volume", {}).get("m5", 0) or 0),
+                    "buys_5m": pair.get("txns", {}).get("m5", {}).get("buys", 0),
+                    "sells_5m": pair.get("txns", {}).get("m5", {}).get("sells", 0),
                 }
-                await websocket.send(json.dumps(payload))
 
-                async for message in websocket:
-                    try:
-                        data = json.loads(message)
-                        process_token_data(data)
-                    except Exception as parse_error:
-                        print(f"[PARSE ERROR] {parse_error}", flush=True)
+                # Mark as notified to prevent duplicate alerts
+                notified_tokens.add(token_address)
+                await send_telegram_alert(token_info)
 
-        except Exception as ws_error:
-            print(f"[WEBSOCKET DISCONNECTED] Retrying in 5 seconds... Error: {ws_error}", flush=True)
-            await asyncio.sleep(5)
+    except Exception as e:
+        logging.error(f"Error checking token {token_address}: {e}")
 
-def start_async_loop():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(listen_pump_websocket())
 
-# ------------------------------------------------------------------------------
-# MAIN ENTRY POINT
-# ------------------------------------------------------------------------------
+async def main():
+    """
+    Main execution loop.
+    """
+    logging.info("Starting pump_listener.py with DEX migration filter ($40,000+ MCAP)...")
+    
+    async with aiohttp.ClientSession() as session:
+        while True:
+            tasks = [fetch_token_metrics(session, ca) for ca in WATCH_LIST]
+            if tasks:
+                await asyncio.gather(*tasks)
+            
+            await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+
+
 if __name__ == "__main__":
-    # Start Flask server in background thread
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-
-    # Start WebSocket listener in main loop
-    start_async_loop()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logging.info("Listener stopped manually.")
