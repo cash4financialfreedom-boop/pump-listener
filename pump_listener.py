@@ -11,7 +11,7 @@ from flask import Flask
 # CONFIGURATION
 # ------------------------------------------------------------------------------
 N8N_WEBHOOK_URL = "https://n8n-app-ok4t.onrender.com/webhook/jyxi3ljaQnh9xOpG"
-MIN_MARKET_CAP_USD = 50000.0
+MIN_MARKET_CAP_USD = 20000.0  # Updated threshold to $20k USD
 PUMP_WS_URI = "wss://pumpportal.fun/api/data"
 
 # Set to store recently processed tokens to prevent duplicate alerts
@@ -42,25 +42,24 @@ def process_token_data(data):
     # Extract market cap or valuation parameters
     market_cap = data.get("marketCapSol") or data.get("usd_market_cap") or data.get("vTokensInBondingCurve", 0)
     
-    # Check if market cap meets the $50k threshold
-    # Note: If your payload already filters DEX tokens, this passes directly
+    # Check if market cap meets the updated $20k threshold
     if market_cap and float(market_cap) >= MIN_MARKET_CAP_USD:
-        print(f"[MATCH FOUND] Token: {mint} | Market Cap: {market_cap}")
+        print(f"[MATCH FOUND] Token: {mint} | Market Cap: {market_cap}", flush=True)
         processed_mints.add(mint)
         
         # Send payload straight to n8n Webhook / Telegram Pipeline
         try:
             response = requests.post(N8N_WEBHOOK_URL, json=data, timeout=10)
-            print(f"[SENT TO N8N] Status Code: {response.status_code}")
+            print(f"[SENT TO N8N] Status Code: {response.status_code}", flush=True)
         except Exception as e:
-            print(f"[ERROR] Failed to send webhook: {e}")
+            print(f"[ERROR] Failed to send webhook: {e}", flush=True)
 
 async def listen_pump_websocket():
     """Connects to PumpPortal WebSocket and listens for token events."""
     while True:
         try:
             async with websockets.connect(PUMP_WS_URI) as websocket:
-                print("[CONNECTED] Listening to PumpPortal WebSocket...")
+                print("[CONNECTED] Listening to PumpPortal WebSocket...", flush=True)
                 
                 # Subscribe to new token trades / migration events
                 payload = {
@@ -73,10 +72,10 @@ async def listen_pump_websocket():
                         data = json.loads(message)
                         process_token_data(data)
                     except Exception as parse_error:
-                        print(f"[PARSE ERROR] {parse_error}")
+                        print(f"[PARSE ERROR] {parse_error}", flush=True)
 
         except Exception as ws_error:
-            print(f"[WEBSOCKET DISCONNECTED] Retrying in 5 seconds... Error: {ws_error}")
+            print(f"[WEBSOCKET DISCONNECTED] Retrying in 5 seconds... Error: {ws_error}", flush=True)
             await asyncio.sleep(5)
 
 def start_async_loop():
