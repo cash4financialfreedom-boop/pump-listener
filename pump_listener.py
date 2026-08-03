@@ -1,158 +1,146 @@
 import asyncio
 import logging
 import os
-import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 import aiohttp
+
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # ==========================================
 # CONFIGURATION SETTINGS
 # ==========================================
-TELEGRAM_BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-TELEGRAM_CHAT_ID = "YOUR_TELEGRAM_CHAT_ID"
-
-# Filter Thresholds
-MIN_MARKET_CAP_USD = 40000.0  # Minimum $40k Market Cap
-CHECK_INTERVAL_SECONDS = 5    # Polling frequency in seconds
-
-# API Endpoints
-DEX_SCREENER_API = "https://api.dexscreener.com/latest/dex/tokens/"
-
-# Add token contract addresses (CAs) to watch or feed them dynamically
-WATCH_LIST = [
-    # Example Contract Addresses:
-    # "So11111111111111111111111111111111111111112"
-]
-
-# Configure Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+# Fetch n8n Webhook URL from environment variables or fallback to default
+N8N_WEBHOOK_URL = os.getenv(
+    "N8N_WEBHOOK_URL",
+    "https://n8n-app-ok4t.onrender.com/webhook/pump-token-check",
 )
 
-# Prevent duplicate Telegram notifications
-notified_tokens = set()
+MIN_MARKET_CAP_USD = 40000.0  # Minimum $40k Market Cap
+CHECK_INTERVAL_SECONDS = 10  # Polling interval in seconds
+
+# Set to track processed tokens to avoid duplicate triggers
+seen_tokens = set()
 
 
-# ==========================================
-# HEALTH-CHECK SERVER FOR RENDER DEPLOYMENT
-# ==========================================
+# Lightweight HTTP server to satisfy Render health checks
 class HealthCheckHandler(BaseHTTPRequestHandler):
+
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"OK - Listener is running")
-
-    # Suppress default HTTP logging to keep console clean
-    def log_message(self, format, *args):
-        return
+        self.wfile.write(b"Pump Listener Service is Running")
 
 
 def run_health_check_server():
-    """Runs a minimal HTTP server in a background thread to satisfy Render's port check."""
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.getenv("PORT", 8080))
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
-    logging.info(f"Health check HTTP server started on port {port}")
+    logging.info(f"Health check server running on port {port}")
     server.serve_forever()
 
 
-# ==========================================
-# TELEGRAM ALERTING
-# ==========================================
-async def send_telegram_alert(token_data: dict):
-    """Sends a formatted alert message to your Telegram chat."""
-    message = (
-        f"🚨 **HIGH-VALUE MIGRATION DETECTED** 🚨\n\n"
-        f"🪙 **Token:** {token_data['name']} (`${token_data['symbol']}`)\n"
-        f"💰 **Market Cap:** ${token_data['market_cap']:,.2f}\n"
-        f"💧 **Liquidity:** ${token_data['liquidity']:,.2f}\n"
-        f"📊 **5M Volume:** ${token_data['volume_5m']:,.2f}\n"
-        f"🔄 **5M Txns:** {token_data['buys_5m']} Buys / {token_data['sells_5m']} Sells\n\n"
-        f"📝 **CA:** `{token_data['address']}`\n\n"
-        f"🔗 [View on DEX Screener](https://dexscreener.com/solana/{token_data['address']})"
-    )
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": True
-    }
-
+async def send_to_n8n(session, token_data):
+    """Sends token payload to n8n Webhook."""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as response:
-                if response.status == 200:
-                    logging.info(f"Successfully sent Telegram alert for {token_data['symbol']}")
-                else:
-                    logging.error(f"Failed to send Telegram alert: HTTP Status {response.status}")
+        async with session.post(N8N_WEBHOOK_URL, json=token_data) as resp:
+            if resp.status == 200:
+                logging.info(
+                    f"Successfully sent to n8n: {token_data.get('symbol')}"
+                )
+            else:
+                logging.error(f"Failed to send to n8n: HTTP Status {resp.status}")
     except Exception as e:
-        logging.error(f"Error sending Telegram message: {e}")
+        logging.error(f"Exception occurred while sending to n8n: {e}")
 
 
-# ==========================================
-# TOKEN METRICS SCRAPER & FILTER
-# ==========================================
-async def fetch_token_metrics(session: aiohttp.ClientSession, token_address: str):
-    """Fetches live token data from DEX Screener API and checks filter criteria."""
-    url = f"{DEX_SCREENER_API}{token_address}"
+async def fetch_and_process_tokens(session):
+    """Fetches latest token profiles from Solana network and filters Market Cap >= $40k."""
     try:
-        async with session.get(url) as response:
-            if response.status != 200:
+        url = "https://api.dexscreener.com/token-profiles/latest/v1"
+        async with session.get(url) as resp:
+            if resp.status != 200:
                 return
 
-            data = await response.json()
-            pairs = data.get("pairs")
-
-            if not pairs:
+            profiles = await resp.json()
+            if not isinstance(profiles, list):
                 return
 
-            # Analyze primary liquidity pair (PumpSwap / Raydium)
-            pair = pairs[0]
-            market_cap = float(pair.get("fdv", 0) or 0)
+            for item in profiles:
+                if item.get("chainId") != "solana":
+                    continue
 
-            # Filter Check: Must meet or exceed $40,000 USD Market Cap
-            if market_cap >= MIN_MARKET_CAP_USD and token_address not in notified_tokens:
-                token_info = {
-                    "name": pair.get("baseToken", {}).get("name", "Unknown"),
-                    "symbol": pair.get("baseToken", {}).get("symbol", "UNKNOWN"),
-                    "address": token_address,
-                    "market_cap": market_cap,
-                    "liquidity": float(pair.get("liquidity", {}).get("usd", 0) or 0),
-                    "volume_5m": float(pair.get("volume", {}).get("m5", 0) or 0),
-                    "buys_5m": pair.get("txns", {}).get("m5", {}).get("buys", 0),
-                    "sells_5m": pair.get("txns", {}).get("m5", {}).get("sells", 0),
-                }
+                token_address = item.get("tokenAddress")
+                if not token_address or token_address in seen_tokens:
+                    continue
 
-                # Mark as notified to avoid spamming duplicate alerts
-                notified_tokens.add(token_address)
-                await send_telegram_alert(token_info)
+                # Fetch detailed pair and market cap info
+                pair_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+                async with session.get(pair_url) as pair_resp:
+                    if pair_resp.status != 200:
+                        continue
+
+                    pair_data = await pair_resp.json()
+                    pairs = pair_data.get("pairs", [])
+                    if not pairs:
+                        continue
+
+                    # Process primary pair
+                    main_pair = pairs[0]
+                    market_cap = main_pair.get("fdv", 0) or main_pair.get(
+                        "marketCap", 0
+                    )
+
+                    if market_cap >= MIN_MARKET_CAP_USD:
+                        seen_tokens.add(token_address)
+
+                        info = main_pair.get("baseToken", {})
+                        websites = main_pair.get("info", {}).get("websites", [])
+                        socials = main_pair.get("info", {}).get("socials", [])
+
+                        payload = {
+                            "name": info.get("name", "Unknown"),
+                            "symbol": info.get("symbol", "Unknown"),
+                            "tokenAddress": token_address,
+                            "marketCap": market_cap,
+                            "pairUrl": main_pair.get("url", ""),
+                            "description": main_pair.get("info", {})
+                            .get("header", "")
+                            .strip(),
+                            "websites": [
+                                w.get("url") for w in websites if "url" in w
+                            ],
+                            "socials": [
+                                s.get("url") for s in socials if "url" in s
+                            ],
+                            "dex": main_pair.get("dexId", ""),
+                        }
+
+                        logging.info(
+                            f"Qualified token found: {payload['symbol']} (MC: ${market_cap:,.2f})"
+                        )
+                        await send_to_n8n(session, payload)
 
     except Exception as e:
-        logging.error(f"Error checking token {token_address}: {e}")
+        logging.error(f"Error in token processing loop: {e}")
 
 
-# ==========================================
-# MAIN EVENT LOOP
-# ==========================================
-async def main():
-    # Start the background HTTP thread to satisfy Render's port scanning
-    threading.Thread(target=run_health_check_server, daemon=True).start()
-
-    logging.info("Starting pump_listener.py with DEX migration filter ($40,000+ MCAP)...")
-
+async def main_loop():
     async with aiohttp.ClientSession() as session:
         while True:
-            tasks = [fetch_token_metrics(session, ca) for ca in WATCH_LIST]
-            if tasks:
-                await asyncio.gather(*tasks)
-
+            await fetch_and_process_tokens(session)
             await asyncio.sleep(CHECK_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logging.info("Listener manually stopped.")
+    # Start health check server in background thread for Render
+    health_thread = threading.Thread(
+        target=run_health_check_server, daemon=True
+    )
+    health_thread.start()
+
+    # Start main event loop
+    logging.info("Starting Pump Listener service...")
+    asyncio.run(main_loop())
