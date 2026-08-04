@@ -20,11 +20,11 @@ MIN_MARKET_CAP_USD = 35000.0  # Threshold: Min $35,000 Market Cap on DEX
 CHECK_INTERVAL_SECONDS = 10
 PORT = int(os.environ.get("PORT", 8080))
 
-# Memory cache to prevent duplicate processing
+# Memory cache to prevent duplicate processing of the same token
 processed_tokens = set()
 
 
-# Health Check Handler for Render
+# Health Check Handler for Web Hosting Platforms (e.g., Render)
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -43,7 +43,7 @@ def run_health_check_server():
     httpd.serve_forever()
 
 
-# Forward payload to n8n
+# Forward rich payload to n8n
 async def send_to_n8n(session, payload):
     try:
         async with session.post(N8N_WEBHOOK_URL, json=payload) as response:
@@ -63,7 +63,7 @@ async def process_dex_token(session, profile):
     token_address = profile.get("tokenAddress")
     chain_id = profile.get("chainId")
 
-    # Only target Solana tokens
+    # Target only Solana tokens that have not been processed yet
     if chain_id != "solana" or not token_address or token_address in processed_tokens:
         return
 
@@ -76,11 +76,11 @@ async def process_dex_token(session, profile):
                 if not pairs:
                     return
 
-                # Take the highest volume / main Solana pair
+                # Select the highest volume / main Solana pair
                 main_pair = pairs[0]
                 market_cap = float(main_pair.get("marketCap") or main_pair.get("fdv") or 0)
 
-                # 1. Check Market Cap (>= 35,000 USD)
+                # 1. Check Market Cap (>= $35,000 USD)
                 if market_cap >= MIN_MARKET_CAP_USD:
                     info = main_pair.get("info", {})
                     socials = info.get("socials", [])
