@@ -20,7 +20,7 @@ MIN_MARKET_CAP_USD = 35000.0  # Threshold: Min $35,000 Market Cap on DEX
 CHECK_INTERVAL_SECONDS = 10
 PORT = int(os.environ.get("PORT", 8080))
 
-# Memory cache to prevent duplicate processing of the same token
+# Global memory cache to prevent duplicate processing across async execution
 processed_tokens = set()
 
 
@@ -63,9 +63,12 @@ async def process_dex_token(session, profile):
     token_address = profile.get("tokenAddress")
     chain_id = profile.get("chainId")
 
-    # Target only Solana tokens that have not been processed yet
+    # Strict lock: Check immediately if already processed
     if chain_id != "solana" or not token_address or token_address in processed_tokens:
         return
+
+    # Instantly lock token before async API call to prevent dual-execution race conditions
+    processed_tokens.add(token_address)
 
     try:
         # Fetch detailed market data from DexScreener
@@ -93,7 +96,6 @@ async def process_dex_token(session, profile):
                         logging.info(f"Skipping {token_address} (>35k MC) - No Twitter/X link found.")
                         return
 
-                    processed_tokens.add(token_address)
                     telegram = next((s.get("url") for s in socials if s.get("type") == "telegram"), "")
                     website = websites[0].get("url") if websites else ""
 
