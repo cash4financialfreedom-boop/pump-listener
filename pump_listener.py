@@ -5,7 +5,7 @@ import logging
 from threading import Thread
 from flask import Flask
 
-# 1. Ustvarimo miniaturen Flask strežnik, da bo Render zadovoljen glede portov
+# 1. Flask strežnik za Render port health check
 app = Flask(__name__)
 
 @app.route('/')
@@ -36,10 +36,16 @@ def fetch_and_process_tokens():
         tokens = response.json()
         
         for token in tokens:
+            # 1. FILTRIRANJE: Samo Solana omrežje!
+            chain_id = token.get("chainId", "").lower()
+            if chain_id != "solana":
+                continue
+
             mint = token.get("tokenAddress")
             if not mint or mint in processed_mints:
                 continue
 
+            # Pridobimo podrobnejše podatke o paru
             pair_response = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}", timeout=10)
             if pair_response.status_code != 200:
                 continue
@@ -48,10 +54,15 @@ def fetch_and_process_tokens():
             if not pair_data:
                 continue
 
-            main_pair = pair_data[0]
+            # Poiščemo primarni Solana par
+            solana_pairs = [p for p in pair_data if p.get("chainId") == "solana"]
+            if not solana_pairs:
+                continue
+                
+            main_pair = solana_pairs[0]
             market_cap = float(main_pair.get("marketCap", 0) or main_pair.get("fdv", 0))
 
-            # Preverjanje praga ($20.000 MC)
+            # 2. Preverjanje praga ($20.000 MC)
             if market_cap < MIN_MARKET_CAP:
                 continue
 
@@ -82,7 +93,7 @@ def fetch_and_process_tokens():
                 "twitter": twitter_url
             }
 
-            logger.info(f"🚀 TOKEN PASSED ($20k+ MC)! Sent to n8n: {name} (${symbol}) | MCap: ${market_cap:,.0f}")
+            logger.info(f"🚀 SOLANA TOKEN PASSED ($20k+ MC)! Sent to n8n: {name} (${symbol}) | MCap: ${market_cap:,.0f}")
             
             if N8N_WEBHOOK_URL:
                 try:
@@ -96,13 +107,12 @@ def fetch_and_process_tokens():
         logger.error(f"Splošna napaka v zanki: {e}")
 
 if __name__ == "__main__":
-    logger.info("Zaganjam Flask strežnik za Render v ozadju...")
-    # Zagon Flask strežnika v svoji niti (thread)
+    logger.info("Zaganjam Flask strežnik v ozadju...")
     t = Thread(target=run_flask)
     t.daemon = True
     t.start()
 
-    logger.info("Zaganjam pump-listener skripto z $20k MC pragom...")
+    logger.info("Zaganjam pump-listener skripto (SAMO SOLANA) z $20k MC pragom...")
     while True:
         fetch_and_process_tokens()
         time.sleep(10)
