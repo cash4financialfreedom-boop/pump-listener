@@ -24,8 +24,8 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def get_dev_history(dev_address):
     """
-    Sledi dev denarnici in njeni starševski denarnici ter analizira pretekla lansiranja.
-    Vrne čist niz za Telegram HTML izpis.
+    Direktno preveri ustvarjene kovance dev denarnice (enako kot GMGN.ai)
+    ter izpiše število migriranih in propadlih projektov.
     """
     if not dev_address or not HELIUS_API_KEY:
         return "Fresh Wallet (First Launch) 🆕"
@@ -34,33 +34,8 @@ def get_dev_history(dev_address):
     
     try:
         url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
-        try:
-            resp = requests.get(url, headers=headers, timeout=5)
-            txs = resp.json() if resp.status_code == 200 and isinstance(resp.json(), list) else []
-        except Exception:
-            txs = []
-        
-        target_wallet = dev_address
-
-        if len(txs) < 5:
-            for tx in reversed(txs):
-                if isinstance(tx, dict):
-                    for transfer in tx.get("nativeTransfers", []):
-                        if transfer.get("toUserAccount") == dev_address:
-                            funder = transfer.get("fromUserAccount")
-                            if funder and funder != dev_address:
-                                target_wallet = funder
-                                break
-                if target_wallet != dev_address:
-                    break
-            
-            if target_wallet != dev_address:
-                try:
-                    parent_url = f"https://api.helius.xyz/v0/addresses/{target_wallet}/transactions?api-key={HELIUS_API_KEY}"
-                    p_resp = requests.get(parent_url, headers=headers, timeout=5)
-                    txs = p_resp.json() if p_resp.status_code == 200 and isinstance(p_resp.json(), list) else []
-                except Exception:
-                    pass
+        resp = requests.get(url, headers=headers, timeout=5)
+        txs = resp.json() if resp.status_code == 200 and isinstance(resp.json(), list) else []
 
         migrated = 0
         rugged = 0
@@ -85,7 +60,7 @@ def get_dev_history(dev_address):
                 if token_mint:
                     try:
                         dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_mint}"
-                        d_resp = requests.get(dex_url, headers=headers, timeout=4)
+                        d_resp = requests.get(dex_url, headers=headers, timeout=3)
                         if d_resp.status_code == 200:
                             data = d_resp.json()
                             pairs = data.get("pairs")
@@ -103,17 +78,17 @@ def get_dev_history(dev_address):
                     except Exception:
                         pass
 
-        if total_launches <= 1 and migrated == 0:
-            return "Fresh Wallet (First Launch) 🆕"
-        
-        if max_ath >= 1_000_000:
-            ath_str = f"${max_ath / 1_000_000:.1f}M"
-        elif max_ath >= 1_000:
-            ath_str = f"${max_ath / 1_000:.0f}K"
-        else:
-            ath_str = f"${max_ath:.0f}"
+        if total_launches > 1 or migrated > 0:
+            if max_ath >= 1_000_000:
+                ath_str = f"${max_ath / 1_000_000:.1f}M"
+            elif max_ath >= 1_000:
+                ath_str = f"${max_ath / 1_000:.0f}K"
+            else:
+                ath_str = f"${max_ath:.0f}"
 
-        return f"Linked Dev ({migrated} Migrated | {rugged} Rugged | Top ATH: {ath_str})"
+            return f"Linked Dev ({migrated} Migrated | {rugged} Rugged | Top ATH: {ath_str})"
+
+        return "Fresh Wallet (First Launch) 🆕"
 
     except Exception as e:
         print(f"Error checking dev history: {e}")
@@ -181,29 +156,32 @@ def fetch_pump_fun_coins(seen_mints):
     url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=last_trade_timestamp&order=DESC"
     headers = {"User-Agent": "Mozilla/5.0"}
     
-    resp = requests.get(url, headers=headers, timeout=5)
-    if resp.status_code == 200:
-        coins = resp.json()
-        if isinstance(coins, list):
-            for coin in coins:
-                mint = coin.get("mint")
-                if not mint or mint in seen_mints:
-                    continue
+    try:
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            coins = resp.json()
+            if isinstance(coins, list):
+                for coin in coins:
+                    mint = coin.get("mint")
+                    if not mint or mint in seen_mints:
+                        continue
 
-                mcap = float(coin.get("usd_market_cap", 0) or 0)
-                
-                # Market Cap pogoj: Med $15k in $50k
-                if 15000 <= mcap <= 50000:
-                    if is_viral_token(coin):
-                        seen_mints.add(mint)
-                        token_payload = {
-                            "mint": mint,
-                            "name": coin.get("name"),
-                            "symbol": coin.get("symbol"),
-                            "dev": coin.get("creator"),
-                            "market_cap": mcap
-                        }
-                        process_and_send_token(token_payload)
+                    mcap = float(coin.get("usd_market_cap", 0) or 0)
+                    
+                    # Market Cap pogoj: Med $15k in $50k
+                    if 15000 <= mcap <= 50000:
+                        if is_viral_token(coin):
+                            seen_mints.add(mint)
+                            token_payload = {
+                                "mint": mint,
+                                "name": coin.get("name"),
+                                "symbol": coin.get("symbol"),
+                                "dev": coin.get("creator"),
+                                "market_cap": mcap
+                            }
+                            process_and_send_token(token_payload)
+    except Exception as e:
+        print(f"Napaka Pump.fun zanke: {e}")
 
 
 def check_migrated_dex_tokens(seen_mints):
@@ -251,7 +229,7 @@ def check_migrated_dex_tokens(seen_mints):
 
 
 def main():
-    print("Starting pump_listener active scanning loop ($15k-$50k | Pump + Raydium)...")
+    print("Starting pump_listener active scanning loop ($15k-$50k | Pump + Raydium | Direct Dev History)...")
     
     seen_mints = set()
     
