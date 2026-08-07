@@ -4,7 +4,7 @@ import threading
 import requests
 from flask import Flask
 
-# --- FLASK STREŽNIK ZA RENDER HEALTH CHECK ---
+# --- FLASK SERVER FOR RENDER HEALTH CHECK ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -15,17 +15,17 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# Zaženi Flask v ločeni niti ob zagonu
+# Start Flask health check in a background thread
 threading.Thread(target=run_flask, daemon=True).start()
 
-# --- SPREMENLJIVKE IN KONFIGURACIJA ---
+# --- CONFIGURATION & ENV VARIABLES ---
 HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def get_dev_history(dev_address):
     """
-    Varno preveri dev denarnico in njen vir nakazil.
-    Vrne čisto besedilo, primerno za Telegram HTML.
+    Traces the dev wallet + funding wallet and analyzes past launches.
+    Outputs a clean string formatted in English for Telegram HTML.
     """
     if not dev_address or not HELIUS_API_KEY:
         return "Fresh Wallet (First Launch) 🆕"
@@ -33,7 +33,7 @@ def get_dev_history(dev_address):
     headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
-        # 1. Pridobi transakcije dev denarnice
+        # 1. Fetch transactions for the dev wallet
         url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
         try:
             resp = requests.get(url, headers=headers, timeout=4)
@@ -43,7 +43,7 @@ def get_dev_history(dev_address):
         
         target_wallet = dev_address
 
-        # 2. Če je denarnica nova, poišči vir nakazila (Funding Parent Wallet)
+        # 2. If fresh wallet, trace funding source (Parent Wallet)
         if len(txs) < 5:
             for tx in reversed(txs):
                 if isinstance(tx, dict):
@@ -56,7 +56,7 @@ def get_dev_history(dev_address):
                 if target_wallet != dev_address:
                     break
             
-            # Pridobi transakcije starševske denarnice
+            # Fetch transactions for parent wallet
             if target_wallet != dev_address:
                 try:
                     parent_url = f"https://api.helius.xyz/v0/addresses/{target_wallet}/transactions?api-key={HELIUS_API_KEY}"
@@ -65,7 +65,7 @@ def get_dev_history(dev_address):
                 except Exception:
                     pass
 
-        # 3. Analiziraj pretekla lansiranja
+        # 3. Analyze past token launches
         migrated = 0
         rugged = 0
         max_ath = 0
@@ -103,7 +103,7 @@ def get_dev_history(dev_address):
                     except Exception:
                         pass
 
-        # 4. Formatiran izpis
+        # 4. Format Output String for Telegram
         if total_launches <= 1 and migrated == 0:
             return "Fresh Wallet (First Launch) 🆕"
         
@@ -117,18 +117,18 @@ def get_dev_history(dev_address):
         return f"Linked Dev ({migrated} Migrated | {rugged} Rugged | Top ATH: {ath_str})"
 
     except Exception as e:
-        print(f"Napaka pri preverjanju dev zgodovine: {e}")
+        print(f"Error checking dev history: {e}")
         return "Fresh Wallet (First Launch) 🆕"
 
 
 def main():
-    print("Starting pump_listener with HTTP server...")
+    print("Starting pump_listener with HTTP health check server...")
     while True:
         try:
-            # Glavna zanka poslušanja / preverjanja kovancev
+            # Main listener logic runs continuously here
             time.sleep(5)
         except Exception as e:
-            print(f"Splošna napaka v zanki: {e}")
+            print(f"General loop error: {e}")
             time.sleep(5)
 
 if __name__ == "__main__":
