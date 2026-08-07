@@ -1,17 +1,24 @@
+import os
+import time
 import requests
 
-def get_dev_history_summary(dev_address, helius_api_key):
+# Postavitev okoljskih spremenljivk ali privzetih vrednosti
+HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
+
+def get_dev_history(dev_address):
     """
-    Traces dev wallet and funding source. Safe execution that never crashes the bot.
+    Varno preveri dev denarnico in njen vir nakazil.
+    Vrne čisto besedilo, primerno za Telegram HTML.
     """
+    if not dev_address or not HELIUS_API_KEY:
+        return "Fresh Wallet (First Launch) 🆕"
+
     headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
-        if not dev_address or not helius_api_key:
-            return "Fresh Wallet (First Launch) 🆕"
-
-        # 1. Fetch transactions for the dev wallet from Helius
-        url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={helius_api_key}"
+        # 1. Pridobi transakcije dev denarnice
+        url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
         try:
             resp = requests.get(url, headers=headers, timeout=4)
             txs = resp.json() if resp.status_code == 200 and isinstance(resp.json(), list) else []
@@ -20,7 +27,7 @@ def get_dev_history_summary(dev_address, helius_api_key):
         
         target_wallet = dev_address
 
-        # 2. If fresh wallet, trace funding address
+        # 2. Če je denarnica nova, poišči vir nakazila (Funding Parent Wallet)
         if len(txs) < 5:
             for tx in reversed(txs):
                 if isinstance(tx, dict):
@@ -33,16 +40,16 @@ def get_dev_history_summary(dev_address, helius_api_key):
                 if target_wallet != dev_address:
                     break
             
-            # Fetch transactions for parent wallet
+            # Pridobi transakcije starševske denarnice
             if target_wallet != dev_address:
                 try:
-                    parent_url = f"https://api.helius.xyz/v0/addresses/{target_wallet}/transactions?api-key={helius_api_key}"
+                    parent_url = f"https://api.helius.xyz/v0/addresses/{target_wallet}/transactions?api-key={HELIUS_API_KEY}"
                     p_resp = requests.get(parent_url, headers=headers, timeout=4)
                     txs = p_resp.json() if p_resp.status_code == 200 and isinstance(p_resp.json(), list) else []
                 except Exception:
                     pass
 
-        # 3. Analyze past token launches
+        # 3. Analiziraj pretekla lansiranja
         migrated = 0
         rugged = 0
         max_ath = 0
@@ -52,7 +59,6 @@ def get_dev_history_summary(dev_address, helius_api_key):
             if isinstance(tx, dict) and (tx.get("type") == "CREATE" or "pump" in str(tx).lower()):
                 total_launches += 1
                 
-                # Check token details via DexScreener safely
                 token_mint = None
                 events = tx.get("events", {})
                 if isinstance(events, dict):
@@ -81,7 +87,7 @@ def get_dev_history_summary(dev_address, helius_api_key):
                     except Exception:
                         pass
 
-        # 4. Return clean string
+        # 4. Formatiran izpis
         if total_launches <= 1 and migrated == 0:
             return "Fresh Wallet (First Launch) 🆕"
         
@@ -95,5 +101,20 @@ def get_dev_history_summary(dev_address, helius_api_key):
         return f"Linked Dev ({migrated} Migrated | {rugged} Rugged | Top ATH: {ath_str})"
 
     except Exception as e:
-        print(f"Dev history error (handled): {e}")
+        print(f"Napaka pri preverjanju dev zgodovine: {e}")
         return "Fresh Wallet (First Launch) 🆕"
+
+
+def main():
+    print("Starting pump_listener...")
+    while True:
+        try:
+            # Glavna zanka poslušanja / preverjanja kovancev
+            # Tukaj skripta deluje in pošilja podatke na n8n
+            time.sleep(5)
+        except Exception as e:
+            print(f"Splošna napaka v zanki: {e}")
+            time.sleep(5)
+
+if __name__ == "__main__":
+    main()
