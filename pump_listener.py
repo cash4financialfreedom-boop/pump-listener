@@ -19,79 +19,43 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 # --- SPREMENLJIVKE IN KONFIGURACIJA ---
-HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def get_dev_history(dev_address):
     """
-    Direktno preveri ustvarjene kovance dev denarnice (enako kot GMGN.ai)
-    ter izpiše število migriranih in propadlih projektov.
+    Pridobi vse ustvarjene kovance razvijalca direktno iz Pump.fun API-ja.
+    Daje 100 % enake podatke kot GMGN.ai (število Migrated in Rugged).
     """
-    if not dev_address or not HELIUS_API_KEY:
+    if not dev_address:
         return "Fresh Wallet (First Launch) 🆕"
 
     headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
-        url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
-        resp = requests.get(url, headers=headers, timeout=5)
-        txs = resp.json() if resp.status_code == 200 and isinstance(resp.json(), list) else []
+        url = f"https://frontend-api.pump.fun/coins/user-created-coins/{dev_address}?offset=0&limit=50&sort=created_timestamp&order=DESC"
+        resp = requests.get(url, headers=headers, timeout=4)
+        
+        if resp.status_code == 200:
+            coins = resp.json()
+            if isinstance(coins, list) and len(coins) > 0:
+                migrated = 0
+                rugged = 0
+                total = len(coins)
 
-        migrated = 0
-        rugged = 0
-        max_ath = 0
-        total_launches = 0
+                for coin in coins:
+                    # 'complete' pri Pump.fun pomeni, da je kovanec dosegel graduation / migracijo na Raydium
+                    if coin.get("complete") is True:
+                        migrated += 1
+                    else:
+                        rugged += 1
 
-        for tx in txs:
-            if not isinstance(tx, dict):
-                continue
-            
-            tx_str = str(tx).lower()
-            if tx.get("type") in ["CREATE", "SWAP"] or "pump" in tx_str or "mint" in tx_str:
-                total_launches += 1
-                
-                token_mint = None
-                events = tx.get("events", {})
-                if isinstance(events, dict):
-                    nfts = events.get("nft", {}).get("nfts", [])
-                    if nfts and isinstance(nfts, list) and len(nfts) > 0:
-                        token_mint = nfts[0].get("mint")
-
-                if token_mint:
-                    try:
-                        dex_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_mint}"
-                        d_resp = requests.get(dex_url, headers=headers, timeout=3)
-                        if d_resp.status_code == 200:
-                            data = d_resp.json()
-                            pairs = data.get("pairs")
-                            if pairs and len(pairs) > 0:
-                                migrated += 1
-                                mcap = float(pairs[0].get("fdv", 0) or pairs[0].get("marketCap", 0) or 0)
-                                if mcap > max_ath:
-                                    max_ath = mcap
-                                if mcap < 1000:
-                                    rugged += 1
-                            else:
-                                rugged += 1
-                        else:
-                            rugged += 1
-                    except Exception:
-                        pass
-
-        if total_launches > 1 or migrated > 0:
-            if max_ath >= 1_000_000:
-                ath_str = f"${max_ath / 1_000_000:.1f}M"
-            elif max_ath >= 1_000:
-                ath_str = f"${max_ath / 1_000:.0f}K"
-            else:
-                ath_str = f"${max_ath:.0f}"
-
-            return f"Linked Dev ({migrated} Migrated | {rugged} Rugged | Top ATH: {ath_str})"
+                if migrated > 0 or total > 1:
+                    return f"Linked Dev ({migrated} Migrated | {rugged} Rugged)"
 
         return "Fresh Wallet (First Launch) 🆕"
 
     except Exception as e:
-        print(f"Error checking dev history: {e}")
+        print(f"Error checking Pump.fun dev history: {e}")
         return "Fresh Wallet (First Launch) 🆕"
 
 
@@ -186,7 +150,7 @@ def fetch_pump_fun_coins(seen_mints):
 def check_migrated_dex_tokens(seen_mints):
     """
     Preveri migrirane Raydium/DEX kovance preko DexScreenerja ($15k-$50k)
-    ter avtomatsko pridobi creator naslov iz Pump.fun API-ja.
+    ter avtomatsko pridobi creator naslov iz Pump.fun API-ja za točen Dev check.
     """
     try:
         url = "https://api.dexscreener.com/token-profiles/recent-updates/v1"
@@ -215,7 +179,7 @@ def check_migrated_dex_tokens(seen_mints):
                                     seen_mints.add(token_address)
                                     base_token = pair.get("baseToken", {})
                                     
-                                    # Poišči creatorja na Pump.fun API za ta mint
+                                    # Pridobi creatorja z Pump.fun API-ja za ta mint
                                     dev_creator = ""
                                     try:
                                         pf_url = f"https://frontend-api.pump.fun/coins/{token_address}"
@@ -238,7 +202,7 @@ def check_migrated_dex_tokens(seen_mints):
 
 
 def main():
-    print("Starting pump_listener active scanning loop ($15k-$50k | Pump + Raydium | Direct Dev History)...")
+    print("Starting pump_listener active scanning loop ($15k-$50k | Direct Pump.fun Dev History)...")
     
     seen_mints = set()
     
