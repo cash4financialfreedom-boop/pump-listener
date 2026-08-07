@@ -168,7 +168,6 @@ def fetch_pump_fun_coins(seen_mints):
 
                     mcap = float(coin.get("usd_market_cap", 0) or 0)
                     
-                    # Market Cap pogoj: Med $15k in $50k
                     if 15000 <= mcap <= 50000:
                         if is_viral_token(coin):
                             seen_mints.add(mint)
@@ -186,7 +185,8 @@ def fetch_pump_fun_coins(seen_mints):
 
 def check_migrated_dex_tokens(seen_mints):
     """
-    Preveri migrirane Raydium/DEX kovance preko DexScreenerja ($15k-$50k).
+    Preveri migrirane Raydium/DEX kovance preko DexScreenerja ($15k-$50k)
+    ter avtomatsko pridobi creator naslov iz Pump.fun API-ja.
     """
     try:
         url = "https://api.dexscreener.com/token-profiles/recent-updates/v1"
@@ -211,16 +211,25 @@ def check_migrated_dex_tokens(seen_mints):
                                 pair = pairs[0]
                                 mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
                                 
-                                # Pogoj za DEX: Med $15k in $50k
                                 if 15000 <= mcap <= 50000:
                                     seen_mints.add(token_address)
                                     base_token = pair.get("baseToken", {})
                                     
+                                    # Poišči creatorja na Pump.fun API za ta mint
+                                    dev_creator = ""
+                                    try:
+                                        pf_url = f"https://frontend-api.pump.fun/coins/{token_address}"
+                                        pf_resp = requests.get(pf_url, headers=headers, timeout=3)
+                                        if pf_resp.status_code == 200:
+                                            dev_creator = pf_resp.json().get("creator", "")
+                                    except Exception:
+                                        pass
+
                                     token_payload = {
                                         "mint": token_address,
                                         "name": base_token.get("name", "Migrated Token"),
                                         "symbol": base_token.get("symbol", "DEX"),
-                                        "dev": "", # Dev se izsledi preko Helius API-ja
+                                        "dev": dev_creator,
                                         "market_cap": mcap
                                     }
                                     process_and_send_token(token_payload)
@@ -235,13 +244,9 @@ def main():
     
     while True:
         try:
-            # 1. Preveri Pump.fun active coins
             fetch_pump_fun_coins(seen_mints)
-            
-            # 2. Preveri DexScreener migrirane pare
             check_migrated_dex_tokens(seen_mints)
 
-            # Ohranimo velikost nabora majhno
             if len(seen_mints) > 1000:
                 seen_mints.clear()
 
