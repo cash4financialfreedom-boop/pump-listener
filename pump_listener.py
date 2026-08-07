@@ -15,17 +15,17 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# Start Flask health check in a background thread
+# Zaženi Flask v ločeni niti ob zagonu
 threading.Thread(target=run_flask, daemon=True).start()
 
-# --- CONFIGURATION & ENVIRONMENT VARIABLES ---
+# --- SPREMENLJIVKE IN KONFIGURACIJA ---
 HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def get_dev_history(dev_address):
     """
-    Traces the dev wallet + parent funding wallet and analyzes past launches.
-    Outputs a clean English string for Telegram HTML formatting.
+    Sledi dev denarnici in njeni starševski denarnici ter analizira pretekla lansiranja.
+    Vrne čist niz za Telegram HTML izpis.
     """
     if not dev_address or not HELIUS_API_KEY:
         return "Fresh Wallet (First Launch) 🆕"
@@ -128,7 +128,7 @@ def process_and_send_token(token_data):
         dev_address = token_data.get("dev", "")
         mcap = token_data.get("market_cap", 0)
 
-        dev_history_str = get_dev_history(dev_address)
+        dev_history_str = get_dev_history(dev_address) if dev_address else "Fresh Wallet (First Launch) 🆕"
 
         payload = {
             "name": name,
@@ -151,8 +151,7 @@ def process_and_send_token(token_data):
 
 def is_viral_token(coin):
     """
-    Preveri prisotnost socialnih omrežij, spletnih strani ter ključnih besed za:
-    Elon Musk / X tvite, Trump / politiko, TikTok, IG ter viralne živali in meme.
+    Preveri družbena omrežja in ključne besede za viralne vsebine.
     """
     has_website = bool(coin.get("website"))
     has_twitter = bool(coin.get("twitter"))
@@ -164,64 +163,109 @@ def is_viral_token(coin):
     
     full_text = f"{name} {symbol} {desc}"
 
-    # Celovit nabor viralnih ključnih besed
     viral_keywords = [
-        # Elon Musk & X / Twitter meta
         "elon", "musk", "tweet", "x.com", "post", "grok", "tesla", "spacex", "doge",
-        # Politična & Trump meta
         "trump", "maga", "kamala", "biden", "president", "usa", "election",
-        # Družbena omrežja
         "tiktok", "instagram", "ig", "reel", "youtube", "yt", "viral",
-        # Viralne živali & meme
         "cat", "dog", "shib", "pepe", "frog", "hippo", "moo", "trend", "meme", "ai", "pump"
     ]
     
     has_viral_keyword = any(keyword in full_text for keyword in viral_keywords)
     has_valid_desc = len(desc.strip()) > 15
 
-    # Sprejmemo kovanec, če ima družbene povezave ALI če vsebina vsebuje katerokoli viralno ključno besedo
     return has_website or has_twitter or has_telegram or has_viral_keyword or has_valid_desc
 
 
+def fetch_pump_fun_coins(seen_mints):
+    """Preveri nove in tekoče kovance na Pump.fun ($15k-$50k)"""
+    url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=last_trade_timestamp&order=DESC"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    
+    resp = requests.get(url, headers=headers, timeout=5)
+    if resp.status_code == 200:
+        coins = resp.json()
+        if isinstance(coins, list):
+            for coin in coins:
+                mint = coin.get("mint")
+                if not mint or mint in seen_mints:
+                    continue
+
+                mcap = float(coin.get("usd_market_cap", 0) or 0)
+                
+                # Market Cap pogoj: Med $15k in $50k
+                if 15000 <= mcap <= 50000:
+                    if is_viral_token(coin):
+                        seen_mints.add(mint)
+                        token_payload = {
+                            "mint": mint,
+                            "name": coin.get("name"),
+                            "symbol": coin.get("symbol"),
+                            "dev": coin.get("creator"),
+                            "market_cap": mcap
+                        }
+                        process_and_send_token(token_payload)
+
+
+def check_migrated_dex_tokens(seen_mints):
+    """
+    Preveri migrirane Raydium/DEX kovance preko DexScreenerja ($15k-$50k).
+    """
+    try:
+        url = "https://api.dexscreener.com/token-profiles/recent-updates/v1"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            profiles = resp.json()
+            if isinstance(profiles, list):
+                for item in profiles:
+                    if item.get("chainId") == "solana":
+                        token_address = item.get("tokenAddress")
+                        if not token_address or token_address in seen_mints:
+                            continue
+                        
+                        pair_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
+                        p_resp = requests.get(pair_url, headers=headers, timeout=4)
+                        if p_resp.status_code == 200:
+                            data = p_resp.json()
+                            pairs = data.get("pairs", [])
+                            if pairs and len(pairs) > 0:
+                                pair = pairs[0]
+                                mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
+                                
+                                # Pogoj za DEX: Med $15k in $50k
+                                if 15000 <= mcap <= 50000:
+                                    seen_mints.add(token_address)
+                                    base_token = pair.get("baseToken", {})
+                                    
+                                    token_payload = {
+                                        "mint": token_address,
+                                        "name": base_token.get("name", "Migrated Token"),
+                                        "symbol": base_token.get("symbol", "DEX"),
+                                        "dev": "", # Dev se izsledi preko Helius API-ja
+                                        "market_cap": mcap
+                                    }
+                                    process_and_send_token(token_payload)
+    except Exception as e:
+        print(f"Napaka DexScreener zanke: {e}")
+
+
 def main():
-    print("Starting pump_listener active scanning loop ($15k-$20k + Elon/Trump/TikTok Virality)...")
+    print("Starting pump_listener active scanning loop ($15k-$50k | Pump + Raydium)...")
     
     seen_mints = set()
     
     while True:
         try:
-            url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=last_trade_timestamp&order=DESC"
-            headers = {"User-Agent": "Mozilla/5.0"}
+            # 1. Preveri Pump.fun active coins
+            fetch_pump_fun_coins(seen_mints)
             
-            resp = requests.get(url, headers=headers, timeout=5)
-            if resp.status_code == 200:
-                coins = resp.json()
-                if isinstance(coins, list):
-                    for coin in coins:
-                        mint = coin.get("mint")
-                        if not mint or mint in seen_mints:
-                            continue
+            # 2. Preveri DexScreener migrirane pare
+            check_migrated_dex_tokens(seen_mints)
 
-                        mcap = float(coin.get("usd_market_cap", 0) or 0)
-                        
-                        # Market Cap pogoj: Med $15k in $20k
-                        if 15000 <= mcap <= 20000:
-                            
-                            # Preverjanje viralnosti (Elon, Trump, TikTok, IG, živali, povezave)
-                            if is_viral_token(coin):
-                                seen_mints.add(mint)
-                                
-                                if len(seen_mints) > 1000:
-                                    seen_mints.clear()
-
-                                token_payload = {
-                                    "mint": mint,
-                                    "name": coin.get("name"),
-                                    "symbol": coin.get("symbol"),
-                                    "dev": coin.get("creator"),
-                                    "market_cap": mcap
-                                }
-                                process_and_send_token(token_payload)
+            # Ohranimo velikost nabora majhno
+            if len(seen_mints) > 1000:
+                seen_mints.clear()
 
             time.sleep(3)
 
