@@ -15,48 +15,62 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# Zaženi Flask v ločeni niti ob zagonu
 threading.Thread(target=run_flask, daemon=True).start()
 
 # --- SPREMENLJIVKE IN KONFIGURACIJA ---
+HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def get_dev_history(dev_address):
     """
-    Pridobi vse ustvarjene kovance razvijalca direktno iz Pump.fun API-ja.
-    Daje 100 % enake podatke kot GMGN.ai (število Migrated in Rugged).
+    Stabilno preverjanje zgodovine Deva:
+    1. Poskusi prebrati Pump.fun API z imitacijo brskalnika.
+    2. Če Pump.fun blokira Render IP (403), uporabi HELIUS API preko transakcij.
     """
     if not dev_address:
         return "Fresh Wallet (First Launch) 🆕"
 
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": "https://pump.fun/"
+    }
     
+    # 1. POSKUS: Pump.fun API
     try:
         url = f"https://frontend-api.pump.fun/coins/user-created-coins/{dev_address}?offset=0&limit=50&sort=created_timestamp&order=DESC"
-        resp = requests.get(url, headers=headers, timeout=4)
+        resp = requests.get(url, headers=headers, timeout=3)
         
         if resp.status_code == 200:
             coins = resp.json()
             if isinstance(coins, list) and len(coins) > 0:
-                migrated = 0
-                rugged = 0
-                total = len(coins)
-
-                for coin in coins:
-                    # 'complete' pri Pump.fun pomeni, da je kovanec dosegel graduation / migracijo na Raydium
-                    if coin.get("complete") is True:
-                        migrated += 1
-                    else:
-                        rugged += 1
-
-                if migrated > 0 or total > 1:
+                migrated = sum(1 for c in coins if c.get("complete") is True)
+                rugged = len(coins) - migrated
+                if migrated > 0 or len(coins) > 1:
                     return f"Linked Dev ({migrated} Migrated | {rugged} Rugged)"
-
-        return "Fresh Wallet (First Launch) 🆕"
-
     except Exception as e:
-        print(f"Error checking Pump.fun dev history: {e}")
-        return "Fresh Wallet (First Launch) 🆕"
+        print(f"Pump.fun API direct check failed: {e}")
+
+    # 2. POSKUS: HELIUS API (Fallback, ko Render IP naleti na Cloudflare blokado)
+    if HELIUS_API_KEY:
+        try:
+            h_url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
+            h_resp = requests.get(h_url, timeout=4)
+            if h_resp.status_code == 200:
+                txs = h_resp.json()
+                if isinstance(txs, list) and len(txs) > 0:
+                    launches = 0
+                    for tx in txs:
+                        tx_str = str(tx).lower()
+                        if "pump" in tx_str or "mint" in tx_str or tx.get("type") == "CREATE":
+                            launches += 1
+                    
+                    if launches > 1:
+                        return f"Linked Dev ({launches} Past Launches Detected)"
+        except Exception as e:
+            print(f"Helius API check failed: {e}")
+
+    return "Fresh Wallet (First Launch) 🆕"
 
 
 def process_and_send_token(token_data):
@@ -82,16 +96,13 @@ def process_and_send_token(token_data):
             resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
             print(f"TOKEN PASSED (${mcap / 1000:.2f}K)! Sent to n8n: {name} (${symbol}) | Status: {resp.status_code}")
         else:
-            print("Warning: N8N_WEBHOOK_URL environment variable is not set!")
+            print("Warning: N8N_WEBHOOK_URL is not set!")
 
     except Exception as e:
         print(f"Error processing token payload: {e}")
 
 
 def is_viral_token(coin):
-    """
-    Preveri družbena omrežja in ključne besede za viralne vsebine.
-    """
     has_website = bool(coin.get("website"))
     has_twitter = bool(coin.get("twitter"))
     has_telegram = bool(coin.get("telegram"))
@@ -116,9 +127,10 @@ def is_viral_token(coin):
 
 
 def fetch_pump_fun_coins(seen_mints):
-    """Preveri nove in tekoče kovance na Pump.fun ($15k-$50k)"""
     url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=last_trade_timestamp&order=DESC"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    }
     
     try:
         resp = requests.get(url, headers=headers, timeout=5)
@@ -148,10 +160,6 @@ def fetch_pump_fun_coins(seen_mints):
 
 
 def check_migrated_dex_tokens(seen_mints):
-    """
-    Preveri migrirane Raydium/DEX kovance preko DexScreenerja ($15k-$50k)
-    ter avtomatsko pridobi creator naslov iz Pump.fun API-ja za točen Dev check.
-    """
     try:
         url = "https://api.dexscreener.com/token-profiles/recent-updates/v1"
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -159,7 +167,7 @@ def check_migrated_dex_tokens(seen_mints):
         resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code == 200:
             profiles = resp.json()
-            if isinstance(profiles, list):
+            if isinstance(coins := profiles, list):
                 for item in profiles:
                     if item.get("chainId") == "solana":
                         token_address = item.get("tokenAddress")
@@ -179,11 +187,10 @@ def check_migrated_dex_tokens(seen_mints):
                                     seen_mints.add(token_address)
                                     base_token = pair.get("baseToken", {})
                                     
-                                    # Pridobi creatorja z Pump.fun API-ja za ta mint
                                     dev_creator = ""
                                     try:
                                         pf_url = f"https://frontend-api.pump.fun/coins/{token_address}"
-                                        pf_resp = requests.get(pf_url, headers=headers, timeout=3)
+                                        pf_resp = requests.get(pf_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
                                         if pf_resp.status_code == 200:
                                             dev_creator = pf_resp.json().get("creator", "")
                                     except Exception:
@@ -202,8 +209,7 @@ def check_migrated_dex_tokens(seen_mints):
 
 
 def main():
-    print("Starting pump_listener active scanning loop ($15k-$50k | Direct Pump.fun Dev History)...")
-    
+    print("Starting pump_listener active scanning loop ($15k-$50k | Direct Dev Check + Helius Fallback)...")
     seen_mints = set()
     
     while True:
