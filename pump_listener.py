@@ -1,8 +1,24 @@
 import os
 import time
+import threading
 import requests
+from flask import Flask
 
-# Postavitev okoljskih spremenljivk ali privzetih vrednosti
+# --- FLASK STREŽNIK ZA RENDER HEALTH CHECK ---
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Pump Listener is Running!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# Zaženi Flask v ločeni niti ob zagonu
+threading.Thread(target=run_flask, daemon=True).start()
+
+# --- SPREMENLJIVKE IN KONFIGURACIJA ---
 HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
@@ -106,11 +122,10 @@ def get_dev_history(dev_address):
 
 
 def main():
-    print("Starting pump_listener...")
+    print("Starting pump_listener with HTTP server...")
     while True:
         try:
             # Glavna zanka poslušanja / preverjanja kovancev
-            # Tukaj skripta deluje in pošilja podatke na n8n
             time.sleep(5)
         except Exception as e:
             print(f"Splošna napaka v zanki: {e}")
