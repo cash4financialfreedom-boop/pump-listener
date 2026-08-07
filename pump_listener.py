@@ -33,7 +33,6 @@ def get_dev_history(dev_address):
     headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
-        # 1. Fetch transactions for the dev wallet
         url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
         try:
             resp = requests.get(url, headers=headers, timeout=5)
@@ -43,7 +42,6 @@ def get_dev_history(dev_address):
         
         target_wallet = dev_address
 
-        # 2. Trace parent funding wallet if dev wallet is fresh
         if len(txs) < 5:
             for tx in reversed(txs):
                 if isinstance(tx, dict):
@@ -64,7 +62,6 @@ def get_dev_history(dev_address):
                 except Exception:
                     pass
 
-        # 3. Analyze past token launches
         migrated = 0
         rugged = 0
         max_ath = 0
@@ -106,7 +103,6 @@ def get_dev_history(dev_address):
                     except Exception:
                         pass
 
-        # 4. Format Output String
         if total_launches <= 1 and migrated == 0:
             return "Fresh Wallet (First Launch) 🆕"
         
@@ -125,9 +121,6 @@ def get_dev_history(dev_address):
 
 
 def process_and_send_token(token_data):
-    """
-    Formats the token payload, fetches dev info, and sends it to n8n Webhook.
-    """
     try:
         mint = token_data.get("mint")
         name = token_data.get("name", "Unknown Token")
@@ -135,7 +128,6 @@ def process_and_send_token(token_data):
         dev_address = token_data.get("dev", "")
         mcap = token_data.get("market_cap", 0)
 
-        # Get dev launch history
         dev_history_str = get_dev_history(dev_address)
 
         payload = {
@@ -157,16 +149,48 @@ def process_and_send_token(token_data):
         print(f"Error processing token payload: {e}")
 
 
-def main():
-    print("Starting pump_listener active scanning loop...")
+def is_viral_token(coin):
+    """
+    Preveri prisotnost socialnih omrežij, spletnih strani ter ključnih besed za:
+    Elon Musk / X tvite, Trump / politiko, TikTok, IG ter viralne živali in meme.
+    """
+    has_website = bool(coin.get("website"))
+    has_twitter = bool(coin.get("twitter"))
+    has_telegram = bool(coin.get("telegram"))
     
-    # Track processed mints to avoid duplicates
+    desc = str(coin.get("description", "")).lower()
+    name = str(coin.get("name", "")).lower()
+    symbol = str(coin.get("symbol", "")).lower()
+    
+    full_text = f"{name} {symbol} {desc}"
+
+    # Celovit nabor viralnih ključnih besed
+    viral_keywords = [
+        # Elon Musk & X / Twitter meta
+        "elon", "musk", "tweet", "x.com", "post", "grok", "tesla", "spacex", "doge",
+        # Politična & Trump meta
+        "trump", "maga", "kamala", "biden", "president", "usa", "election",
+        # Družbena omrežja
+        "tiktok", "instagram", "ig", "reel", "youtube", "yt", "viral",
+        # Viralne živali & meme
+        "cat", "dog", "shib", "pepe", "frog", "hippo", "moo", "trend", "meme", "ai", "pump"
+    ]
+    
+    has_viral_keyword = any(keyword in full_text for keyword in viral_keywords)
+    has_valid_desc = len(desc.strip()) > 15
+
+    # Sprejmemo kovanec, če ima družbene povezave ALI če vsebina vsebuje katerokoli viralno ključno besedo
+    return has_website or has_twitter or has_telegram or has_viral_keyword or has_valid_desc
+
+
+def main():
+    print("Starting pump_listener active scanning loop ($15k-$20k + Elon/Trump/TikTok Virality)...")
+    
     seen_mints = set()
     
     while True:
         try:
-            # Fetch latest tokens from frontend API/Helius
-            url = "https://frontend-api.pump.fun/coins?offset=0&limit=10&sort=created_timestamp&order=DESC"
+            url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=last_trade_timestamp&order=DESC"
             headers = {"User-Agent": "Mozilla/5.0"}
             
             resp = requests.get(url, headers=headers, timeout=5)
@@ -175,17 +199,21 @@ def main():
                 if isinstance(coins, list):
                     for coin in coins:
                         mint = coin.get("mint")
-                        if mint and mint not in seen_mints:
-                            seen_mints.add(mint)
-                            
-                            # Keep set size small
-                            if len(seen_mints) > 1000:
-                                seen_mints.clear()
+                        if not mint or mint in seen_mints:
+                            continue
 
-                            mcap = float(coin.get("usd_market_cap", 0) or 0)
+                        mcap = float(coin.get("usd_market_cap", 0) or 0)
+                        
+                        # Market Cap pogoj: Med $15k in $20k
+                        if 15000 <= mcap <= 20000:
                             
-                            # Filter threshold (e.g., $10K+ market cap or new listings)
-                            if mcap >= 10000:
+                            # Preverjanje viralnosti (Elon, Trump, TikTok, IG, živali, povezave)
+                            if is_viral_token(coin):
+                                seen_mints.add(mint)
+                                
+                                if len(seen_mints) > 1000:
+                                    seen_mints.clear()
+
                                 token_payload = {
                                     "mint": mint,
                                     "name": coin.get("name"),
@@ -195,7 +223,7 @@ def main():
                                 }
                                 process_and_send_token(token_payload)
 
-            time.sleep(4)
+            time.sleep(3)
 
         except Exception as e:
             print(f"Error in active listener loop: {e}")
