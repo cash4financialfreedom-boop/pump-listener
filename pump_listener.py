@@ -19,7 +19,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL")
-MIN_MARKET_CAP = 20000
+
+# --- FILTRI ZA MARKET CAP ($15k - $20k) ---
+MIN_MARKET_CAP = 15000
+MAX_MARKET_CAP = 20000
 
 processed_mints = set()
 
@@ -29,6 +32,33 @@ def format_mcap(value):
     elif value >= 1_000:
         return f"{value / 1_000:.2f}K"
     return f"{value:.0f}"
+
+def get_dev_history(mint):
+    """
+    Preveri zgodovino ustvarjalca (Dev) preko RugCheck API-ja.
+    """
+    try:
+        url = f"https://api.rugcheck.xyz/v1/tokens/{mint}/report/summary"
+        res = requests.get(url, timeout=5)
+        
+        if res.status_code == 200:
+            data = res.json()
+            creator = data.get("creator", {})
+            
+            if creator:
+                total_launched = creator.get("totalTokensLaunched", 1)
+                rug_count = creator.get("ruggedTokens", 0)
+                highest_mcap = creator.get("highestMarketCap", 0)
+                
+                if total_launched <= 1:
+                    return "First Launch (Fresh Wallet) 🆕"
+                else:
+                    h_mcap_str = format_mcap(highest_mcap)
+                    return f"Launch #{total_launched} ({rug_count} rugs, ATH: ${h_mcap_str}) ⚠️"
+    except Exception as e:
+        logger.warning(f"Ne morem pridobiti Dev zgodovine za {mint}: {e}")
+    
+    return "Unknown / Private Dev 👤"
 
 def fetch_and_process_tokens():
     try:
@@ -62,7 +92,8 @@ def fetch_and_process_tokens():
             main_pair = solana_pairs[0]
             market_cap = float(main_pair.get("marketCap", 0) or main_pair.get("fdv", 0))
 
-            if market_cap < MIN_MARKET_CAP:
+            # --- FILTRIRANJE V RAZPONU $15,000 DO $20,000 ---
+            if not (MIN_MARKET_CAP <= market_cap <= MAX_MARKET_CAP):
                 continue
 
             info = main_pair.get("info", {})
@@ -82,16 +113,20 @@ def fetch_and_process_tokens():
             symbol = main_pair.get("baseToken", {}).get("symbol", "UNKNOWN")
             pair_url = main_pair.get("url", f"https://dexscreener.com/solana/{mint}")
 
+            # --- DOBI PODATKE O DEV-U ---
+            dev_history = get_dev_history(mint)
+
             payload = {
                 "name": name,
                 "symbol": symbol,
                 "market_cap": format_mcap(market_cap),
                 "mint": mint,
                 "pair_url": pair_url,
-                "twitter": twitter_url
+                "twitter": twitter_url,
+                "dev_history": dev_history
             }
 
-            logger.info(f"🚀 SOLANA TOKEN PASSED ($20k+ MC)! Sent to n8n: {name} (${symbol}) | MCap: {format_mcap(market_cap)}")
+            logger.info(f"🚀 TOKEN PASSED (${format_mcap(market_cap)})! Sent to n8n: {name} (${symbol}) | Dev: {dev_history}")
             
             if N8N_WEBHOOK_URL:
                 try:
