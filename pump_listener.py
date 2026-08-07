@@ -35,9 +35,12 @@ def format_mcap(value):
 
 def get_dev_history(mint):
     """
-    Preveri zgodovino ustvarjalca (Dev) preko RugCheck API-ja.
+    Preveri zgodovino ustvarjalca (Dev) preko RugCheck in Pump.fun API-ja.
     """
     try:
+        # Kratek zamik, da ima API čas indeksirati nov kovanec
+        time.sleep(2)
+        
         url = f"https://api.rugcheck.xyz/v1/tokens/{mint}/report/summary"
         res = requests.get(url, timeout=5)
         
@@ -45,7 +48,7 @@ def get_dev_history(mint):
             data = res.json()
             creator = data.get("creator", {})
             
-            if creator:
+            if creator and isinstance(creator, dict):
                 total_launched = creator.get("totalTokensLaunched", 1)
                 rug_count = creator.get("ruggedTokens", 0)
                 highest_mcap = creator.get("highestMarketCap", 0)
@@ -55,10 +58,21 @@ def get_dev_history(mint):
                 else:
                     h_mcap_str = format_mcap(highest_mcap)
                     return f"Launch #{total_launched} ({rug_count} rugs, ATH: ${h_mcap_str}) ⚠️"
+        
+        # Rezervni klic na Pump.fun API, če RugCheck še nima indeksa
+        pf_url = f"https://frontend-api.pump.fun/coins/{mint}"
+        pf_res = requests.get(pf_url, timeout=5)
+        if pf_res.status_code == 200:
+            pf_data = pf_res.json()
+            creator_wallet = pf_data.get("creator")
+            if creator_wallet:
+                # Če imamo denarnico, a ni zgodovine
+                return "Fresh Wallet (Pump.fun) 🆕"
+
     except Exception as e:
         logger.warning(f"Ne morem pridobiti Dev zgodovine za {mint}: {e}")
     
-    return "Unknown / Private Dev 👤"
+    return "Fresh Wallet (First Launch) 🆕"
 
 def fetch_and_process_tokens():
     try:
