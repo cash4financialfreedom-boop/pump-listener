@@ -23,22 +23,20 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def get_dev_history(dev_address):
     """
-    Stabilno preverjanje zgodovine Deva:
-    1. Poskusi prebrati Pump.fun API z imitacijo brskalnika.
-    2. Če Pump.fun blokira Render IP (403), uporabi HELIUS API preko transakcij.
+    Hitro in varnostno izolirano preverjanje razvijalca (podpira serijske lansiralce z 100+ kovanci).
     """
     if not dev_address:
         return "Fresh Wallet (First Launch) 🆕"
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json",
         "Referer": "https://pump.fun/"
     }
     
-    # 1. POSKUS: Pump.fun API
+    # 1. POSKUS: Direct Pump.fun API z večjim limitom (100)
     try:
-        url = f"https://frontend-api.pump.fun/coins/user-created-coins/{dev_address}?offset=0&limit=50&sort=created_timestamp&order=DESC"
+        url = f"https://frontend-api.pump.fun/coins/user-created-coins/{dev_address}?offset=0&limit=100&sort=created_timestamp&order=DESC"
         resp = requests.get(url, headers=headers, timeout=3)
         
         if resp.status_code == 200:
@@ -49,13 +47,13 @@ def get_dev_history(dev_address):
                 if migrated > 0 or len(coins) > 1:
                     return f"Linked Dev ({migrated} Migrated | {rugged} Rugged)"
     except Exception as e:
-        print(f"Pump.fun API direct check failed: {e}")
+        pass
 
-    # 2. POSKUS: HELIUS API (Fallback, ko Render IP naleti na Cloudflare blokado)
+    # 2. POSKUS: HELIUS API Fallback (če Render IP blokira Pump.fun)
     if HELIUS_API_KEY:
         try:
             h_url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
-            h_resp = requests.get(h_url, timeout=4)
+            h_resp = requests.get(h_url, timeout=3)
             if h_resp.status_code == 200:
                 txs = h_resp.json()
                 if isinstance(txs, list) and len(txs) > 0:
@@ -68,7 +66,7 @@ def get_dev_history(dev_address):
                     if launches > 1:
                         return f"Linked Dev ({launches} Past Launches Detected)"
         except Exception as e:
-            print(f"Helius API check failed: {e}")
+            pass
 
     return "Fresh Wallet (First Launch) 🆕"
 
@@ -93,8 +91,8 @@ def process_and_send_token(token_data):
         }
 
         if N8N_WEBHOOK_URL:
-            resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
-            print(f"TOKEN PASSED (${mcap / 1000:.2f}K)! Sent to n8n: {name} (${symbol}) | Status: {resp.status_code}")
+            resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
+            print(f"✅ TOKEN PASSED (${mcap / 1000:.2f}K)! Sent to n8n: {name} (${symbol})")
         else:
             print("Warning: N8N_WEBHOOK_URL is not set!")
 
@@ -129,11 +127,11 @@ def is_viral_token(coin):
 def fetch_pump_fun_coins(seen_mints):
     url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=last_trade_timestamp&order=DESC"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
     
     try:
-        resp = requests.get(url, headers=headers, timeout=5)
+        resp = requests.get(url, headers=headers, timeout=3)
         if resp.status_code == 200:
             coins = resp.json()
             if isinstance(coins, list):
@@ -156,7 +154,7 @@ def fetch_pump_fun_coins(seen_mints):
                             }
                             process_and_send_token(token_payload)
     except Exception as e:
-        print(f"Napaka Pump.fun zanke: {e}")
+        pass
 
 
 def check_migrated_dex_tokens(seen_mints):
@@ -164,10 +162,10 @@ def check_migrated_dex_tokens(seen_mints):
         url = "https://api.dexscreener.com/token-profiles/recent-updates/v1"
         headers = {"User-Agent": "Mozilla/5.0"}
         
-        resp = requests.get(url, headers=headers, timeout=5)
+        resp = requests.get(url, headers=headers, timeout=3)
         if resp.status_code == 200:
             profiles = resp.json()
-            if isinstance(coins := profiles, list):
+            if isinstance(profiles, list):
                 for item in profiles:
                     if item.get("chainId") == "solana":
                         token_address = item.get("tokenAddress")
@@ -175,7 +173,7 @@ def check_migrated_dex_tokens(seen_mints):
                             continue
                         
                         pair_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-                        p_resp = requests.get(pair_url, headers=headers, timeout=4)
+                        p_resp = requests.get(pair_url, headers=headers, timeout=3)
                         if p_resp.status_code == 200:
                             data = p_resp.json()
                             pairs = data.get("pairs", [])
@@ -190,7 +188,7 @@ def check_migrated_dex_tokens(seen_mints):
                                     dev_creator = ""
                                     try:
                                         pf_url = f"https://frontend-api.pump.fun/coins/{token_address}"
-                                        pf_resp = requests.get(pf_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
+                                        pf_resp = requests.get(pf_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2)
                                         if pf_resp.status_code == 200:
                                             dev_creator = pf_resp.json().get("creator", "")
                                     except Exception:
@@ -205,12 +203,13 @@ def check_migrated_dex_tokens(seen_mints):
                                     }
                                     process_and_send_token(token_payload)
     except Exception as e:
-        print(f"Napaka DexScreener zanke: {e}")
+        pass
 
 
 def main():
     print("Starting pump_listener active scanning loop ($15k-$50k | Direct Dev Check + Helius Fallback)...")
     seen_mints = set()
+    loop_count = 0
     
     while True:
         try:
@@ -220,10 +219,14 @@ def main():
             if len(seen_mints) > 1000:
                 seen_mints.clear()
 
+            loop_count += 1
+            if loop_count % 300 == 0:
+                print("🔍 Scanner heartbeat: Loop actively checking coins...")
+
             time.sleep(3)
 
         except Exception as e:
-            print(f"Error in active listener loop: {e}")
+            print(f"Error in main loop: {e}")
             time.sleep(5)
 
 if __name__ == "__main__":
