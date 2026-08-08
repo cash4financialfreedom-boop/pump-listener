@@ -23,18 +23,17 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def get_dev_history(dev_address):
     """
-    Hitro in varnostno izolirano preverjanje razvijalca (podpira serijske lansiralce z 100+ kovanci).
+    Hitro in varnostno izolirano preverjanje razvijalca (podpira serijske lansiralce).
     """
     if not dev_address:
         return "Fresh Wallet (First Launch) 🆕"
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-        "Referer": "https://pump.fun/"
+        "Accept": "application/json"
     }
     
-    # 1. POSKUS: Direct Pump.fun API z večjim limitom (100)
+    # 1. POSKUS: Direct Pump.fun API
     try:
         url = f"https://frontend-api.pump.fun/coins/user-created-coins/{dev_address}?offset=0&limit=100&sort=created_timestamp&order=DESC"
         resp = requests.get(url, headers=headers, timeout=3)
@@ -46,10 +45,10 @@ def get_dev_history(dev_address):
                 rugged = len(coins) - migrated
                 if migrated > 0 or len(coins) > 1:
                     return f"Linked Dev ({migrated} Migrated | {rugged} Rugged)"
-    except Exception as e:
+    except Exception:
         pass
 
-    # 2. POSKUS: HELIUS API Fallback (če Render IP blokira Pump.fun)
+    # 2. POSKUS: Helius API Fallback
     if HELIUS_API_KEY:
         try:
             h_url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
@@ -57,15 +56,10 @@ def get_dev_history(dev_address):
             if h_resp.status_code == 200:
                 txs = h_resp.json()
                 if isinstance(txs, list) and len(txs) > 0:
-                    launches = 0
-                    for tx in txs:
-                        tx_str = str(tx).lower()
-                        if "pump" in tx_str or "mint" in tx_str or tx.get("type") == "CREATE":
-                            launches += 1
-                    
+                    launches = len(txs)
                     if launches > 1:
-                        return f"Linked Dev ({launches} Past Launches Detected)"
-        except Exception as e:
+                        return f"Linked Dev ({launches} Past Transactions/Launches)"
+        except Exception:
             pass
 
     return "Fresh Wallet (First Launch) 🆕"
@@ -92,12 +86,13 @@ def process_and_send_token(token_data):
 
         if N8N_WEBHOOK_URL:
             resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
-            print(f"✅ TOKEN PASSED (${mcap / 1000:.2f}K)! Sent to n8n: {name} (${symbol})")
+            # Dodan flush=True zagotovi takojšen prikaz v Render logih!
+            print(f"✅ TOKEN PASSED (${mcap / 1000:.2f}K)! Sent to n8n: {name} (${symbol})", flush=True)
         else:
-            print("Warning: N8N_WEBHOOK_URL is not set!")
+            print("Warning: N8N_WEBHOOK_URL is not set!", flush=True)
 
     except Exception as e:
-        print(f"Error processing token payload: {e}")
+        print(f"Error processing token payload: {e}", flush=True)
 
 
 def is_viral_token(coin):
@@ -153,7 +148,7 @@ def fetch_pump_fun_coins(seen_mints):
                                 "market_cap": mcap
                             }
                             process_and_send_token(token_payload)
-    except Exception as e:
+    except Exception:
         pass
 
 
@@ -202,12 +197,12 @@ def check_migrated_dex_tokens(seen_mints):
                                         "market_cap": mcap
                                     }
                                     process_and_send_token(token_payload)
-    except Exception as e:
+    except Exception:
         pass
 
 
 def main():
-    print("Starting pump_listener active scanning loop ($15k-$50k | Direct Dev Check + Helius Fallback)...")
+    print("Starting pump_listener active scanning loop ($15k-$50k | Direct Dev Check + Helius Fallback)...", flush=True)
     seen_mints = set()
     loop_count = 0
     
@@ -221,12 +216,12 @@ def main():
 
             loop_count += 1
             if loop_count % 300 == 0:
-                print("🔍 Scanner heartbeat: Loop actively checking coins...")
+                print("🔍 Scanner heartbeat: Loop actively checking coins...", flush=True)
 
             time.sleep(3)
 
         except Exception as e:
-            print(f"Error in main loop: {e}")
+            print(f"Error in main loop: {e}", flush=True)
             time.sleep(5)
 
 if __name__ == "__main__":
