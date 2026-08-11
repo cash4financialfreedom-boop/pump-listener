@@ -32,6 +32,7 @@ def fetch_and_filter(seen_mints):
             data = resp.json()
             items = data.get("data", {}).get("items", [])
             if not items:
+                print("ℹ️ Birdeye: No new items found right now.", flush=True)
                 return
             
             for item in items:
@@ -71,13 +72,13 @@ def fetch_and_filter(seen_mints):
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Birdeye Fast New Listing Scanner Running...", flush=True)
+    print("🚀 Birdeye Balanced Scanner Running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
         if len(seen_mints) > 1000:
             seen_mints.clear()
-        time.sleep(3) # Hitrejše preverjanje na vsake 3 sekunde
+        time.sleep(8) # Varen interval na 8 sekund, ki preprečuje 429 napake
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
