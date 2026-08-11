@@ -4,7 +4,7 @@ import threading
 import requests
 from flask import Flask
 
-# --- FLASK SERVER FOR RENDER HEALTH CHECK ---
+# --- FLASK SERVER ZA RENDER ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -17,32 +17,10 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# --- CONFIG ---
+# --- NASTAVITVE ---
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
-def process_and_send_token(token_data):
-    try:
-        mint = token_data.get("mint")
-        name = token_data.get("name", "Unknown Token")
-        mcap = token_data.get("market_cap", 0)
-        
-        payload = {
-            "tokenName": name,
-            "tokenSymbol": token_data.get("symbol"),
-            "market_cap": f"${mcap / 1000:.2f}K",
-            "marketCap": mcap,
-            "mint": mint,
-            "twitterUrl": token_data.get("twitterUrl", ""),
-            "pair_url": f"https://dexscreener.com/solana/{mint}"
-        }
-
-        if N8N_WEBHOOK_URL:
-            requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
-            print(f"✅ TOKEN PASSED (${mcap / 1000:.2f}K): {name}", flush=True)
-    except Exception as e:
-        print(f"Error: {e}", flush=True)
-
-def fetch_dexscreener_coins(seen_mints):
+def fetch_and_filter(seen_mints):
     url = "https://api.dexscreener.com/latest/dex/search?q=pump"
     headers = {"User-Agent": "Mozilla/5.0"}
     
@@ -61,28 +39,38 @@ def fetch_dexscreener_coins(seen_mints):
                     continue
 
                 mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
-                is_target = (15000 <= mcap <= 50000) or (mcap <= 100000)
+                name = base_token.get("name", "Unknown")
                 
+                # Preverimo, če obstaja Twitter v socialnih povezavah
                 socials = pair.get("info", {}).get("socials", [])
                 twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
 
+                # POGOJI: Če želiš, da spusti skozi, ko ima Twitter in ustreza rangu (npr. do 100k)
+                is_target = (mcap <= 100000)
+
                 if is_target and twitter:
                     seen_mints.add(mint)
-                    process_and_send_token({
+                    payload = {
+                        "tokenName": name,
+                        "tokenSymbol": base_token.get("symbol"),
+                        "market_cap": f"${mcap / 1000:.2f}K",
+                        "marketCap": mcap,
                         "mint": mint,
-                        "name": base_token.get("name"),
-                        "symbol": base_token.get("symbol"),
-                        "market_cap": mcap,
-                        "twitterUrl": twitter
-                    })
+                        "twitterUrl": twitter,
+                        "pair_url": f"https://dexscreener.com/solana/{mint}"
+                    }
+                    if N8N_WEBHOOK_URL:
+                        requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
+                        print(f"✅ POSLAN TOKEN (${mcap / 1000:.2f}K): {name}", flush=True)
+
     except Exception as e:
-        print(f"DexScreener API Error: {e}", flush=True)
+        print(f"Napaka pri branju: {e}", flush=True)
 
 def main():
-    print("Scanner active via DexScreener API...", flush=True)
+    print("Skener deluje v čistem načinu...", flush=True)
     seen_mints = set()
     while True:
-        fetch_dexscreener_coins(seen_mints)
+        fetch_and_filter(seen_mints)
         if len(seen_mints) > 1000:
             seen_mints.clear()
         time.sleep(5)
