@@ -18,7 +18,7 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_and_filter(seen_mints):
-    # Točen in uradni Birdeye endpoint za nove tokene
+    # Preverjen uradni Birdeye endpoint za nove vnose
     url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
     
     headers = {
@@ -44,7 +44,7 @@ def fetch_and_filter(seen_mints):
                 name = item.get("name", "Unknown")
                 symbol = item.get("symbol", "UNKNOWN")
                 
-                # Filtriranje: 15k - 100k
+                # Filtriranje točno po tvojem pasu: 15k - 100k
                 if mcap < 15000 or mcap > 100000:
                     continue
                 
@@ -72,13 +72,13 @@ def fetch_and_filter(seen_mints):
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Birdeye official new_listing scanner running...", flush=True)
+    print("🚀 Birdeye Official New Listing Scanner Running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
         if len(seen_mints) > 1000:
             seen_mints.clear()
-        time.sleep(15) # Povečano na 15 sekund, da preprečimo 429 Too Many Requests
+        time.sleep(15) # Varno časovno obdobje znotraj rate limita
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
