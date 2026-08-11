@@ -21,7 +21,7 @@ def fetch_raydium_market(seen_mints):
     url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json", "x-chain": "solana"}
     
-    print("Scanning Raydium market...", flush=True)
+    print("Scanning Raydium market safely...", flush=True)
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         
@@ -29,12 +29,12 @@ def fetch_raydium_market(seen_mints):
             data = resp.json()
             items = data.get("data", {}).get("items", [])
             
+            # Vzmemo samo prvi neraziskani kovanec, da ne zamašimo n8n-a
             for item in items:
                 source = item.get("source")
                 mint = item.get("address")
                 name = item.get("name", "Unknown")
                 
-                # Vzamemo karkoli je, da vidimo pretok
                 if source not in ["raydium", "raydium_clamm"]:
                     continue
                 
@@ -44,15 +44,21 @@ def fetch_raydium_market(seen_mints):
                 seen_mints.add(mint)
                 payload = {
                     "tokenName": name,
-                    "marketCap": 50000, # Fiksen podatek za test, da Claude ne zavrne
+                    "marketCap": 50000,
                     "mint": mint,
                     "twitterUrl": f"https://twitter.com/search?q={mint}",
                     "pair_url": f"https://birdeye.so/token/{mint}?chain=solana"
                 }
                 
                 if N8N_WEBHOOK_URL:
-                    requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
-                    print(f"SUCCESSFULLY SENT RAYDIUM TOKEN: {name}", flush=True)
+                    try:
+                        requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
+                        print(f"SUCCESSFULLY SENT 1 TOKEN TO N8N: {name}", flush=True)
+                    except Exception as err:
+                        print(f"Webhook error: {err}", flush=True)
+                
+                # Posredujemo samo enega na cikel, da n8n in Claude normalno obdelata
+                break
                     
         elif resp.status_code == 429:
             print("Rate limit 429, resting...", flush=True)
@@ -61,11 +67,11 @@ def fetch_raydium_market(seen_mints):
         print(f"Error: {e}", flush=True)
 
 def main():
-    print("Sniper Active - Forcing Raw Raydium Flow...", flush=True)
+    print("Sniper Active - Rate Limited Flow...", flush=True)
     seen_mints = set()
     while True:
         fetch_raydium_market(seen_mints)
-        time.sleep(20)
+        time.sleep(30) # Počakaj 30 sekund pred naslednjim preverjanjem
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
