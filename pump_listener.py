@@ -18,39 +18,32 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_raydium_market(seen_mints):
-    url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
+    # Uporabljamo drug endpoint za pregled trendov/tokenov
+    url = "https://public-api.birdeye.so/defi/token_trending"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json", "x-chain": "solana"}
     
-    print("Scanning Raydium market...", flush=True)
+    print("Scanning trending Raydium tokens...", flush=True)
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         print(f"API Status Code: {resp.status_code}", flush=True)
         
         if resp.status_code == 200:
             data = resp.json()
-            items = data.get("data", {}).get("items", [])
-            print(f"Total items received: {len(items)}", flush=True)
+            items = data.get("data", {}).get("tokens", [])
+            print(f"Total trending items received: {len(items)}", flush=True)
             
             for item in items:
-                source = item.get("source")
                 mint = item.get("address")
-                name = item.get("name")
-                mcap = float(item.get("marketCap", 0) or 0)
-                twitter = item.get("extensions", {}).get("twitter", "")
+                name = item.get("name", "Unknown")
+                mcap = float(item.get("market_cap", 0) or item.get("marketCap", 0) or 0)
                 
-                print(f"-> Token: {name} | Source: {source} | MCAP: ${mcap:.1f} | Twitter: {bool(twitter)}", flush=True)
+                print(f"-> Token: {name} | MCAP: ${mcap:.1f}", flush=True)
                 
-                if source != "raydium":
-                    continue
-                
-                # Wide range for testing (1k to 1M)
+                # Testni pas (pustimo širše, da vidimo, kaj vrne)
                 if mcap < 1000 or mcap > 1000000:
                     continue
                 
                 if mint in seen_mints:
-                    continue
-                
-                if not twitter:
                     continue
                 
                 seen_mints.add(mint)
@@ -58,13 +51,13 @@ def fetch_raydium_market(seen_mints):
                     "tokenName": name,
                     "marketCap": mcap,
                     "mint": mint,
-                    "twitterUrl": twitter,
+                    "twitterUrl": f"https://twitter.com/search?q={mint}",
                     "pair_url": f"https://birdeye.so/token/{mint}?chain=solana"
                 }
                 
                 if N8N_WEBHOOK_URL:
                     requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
-                    print(f"SUCCESSFULLY SENT TOKEN: {name} (${mcap/1000:.0f}K)", flush=True)
+                    print(f"SUCCESSFULLY SENT TRENDING TOKEN: {name} (${mcap/1000:.0f}K)", flush=True)
                     
         elif resp.status_code == 429:
             print("Rate limit 429, resting...", flush=True)
@@ -73,11 +66,11 @@ def fetch_raydium_market(seen_mints):
         print(f"Error: {e}", flush=True)
 
 def main():
-    print("Sniper Active with Debug Logs...", flush=True)
+    print("Sniper Active on Trending API...", flush=True)
     seen_mints = set()
     while True:
         fetch_raydium_market(seen_mints)
-        time.sleep(20)
+        time.sleep(30)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
