@@ -19,17 +19,17 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_and_filter(seen_mints):
-    url = "https://api.dexscreener.com/latest/dex/search?q=pump"
+    # Uporabimo endpoint za zadnje dodane Solana tokene, da dobimo prave začetne vrednosti
+    url = "https://api.dexscreener.com/latest/dex/tokens/solana"
     headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
-        print("🔄 Sending request to DexScreener...", flush=True)
+        print("🔄 Sending request to DexScreener (Latest Solana)...", flush=True)
         resp = requests.get(url, headers=headers, timeout=5)
         
         if resp.status_code == 200:
             data = resp.json()
             if not data or not isinstance(data, dict):
-                print("⚠️ DexScreener returned empty JSON.", flush=True)
                 return
             
             pairs = data.get("pairs", [])
@@ -88,9 +88,6 @@ def main():
         time.sleep(5)
 
 if __name__ == "__main__":
-    # Start Flask in a background thread
     threading.Thread(target=run_flask, daemon=True).start()
-    
-    # Wait a second and start the main scanner loop
     time.sleep(1)
     main()
