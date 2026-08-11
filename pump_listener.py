@@ -19,44 +19,49 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_and_filter(seen_mints):
-    url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=created_timestamp&order=DESC"
-    
-    # Izboljšane glave, da Cloudflare ne blokira zahteve (status 530)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Origin": "https://pump.fun",
-        "Referer": "https://pump.fun/"
-    }
+    # Uporabimo DexScreenerjev iskalni niz, usmerjen specifično na pump.fun tokene
+    url = "https://api.dexscreener.com/latest/dex/search?q=pump.fun"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     try:
-        print("🔄 Fetching fresh tokens from Pump.fun API...", flush=True)
+        print("🔄 Fetching pump.fun pairs via DexScreener...", flush=True)
         resp = requests.get(url, headers=headers, timeout=5)
         
         if resp.status_code == 200:
-            coins = resp.json()
-            if not coins or not isinstance(coins, list):
+            data = resp.json()
+            if not data or not isinstance(data, dict):
                 return
             
-            print(f"📊 Total coins found: {len(coins)}", flush=True)
+            pairs = data.get("pairs")
+            if not pairs or not isinstance(pairs, list):
+                return
             
-            for coin in coins:
-                mint = coin.get("mint")
+            print(f"📊 Pairs found: {len(pairs)}", flush=True)
+            
+            for pair in pairs:
+                if pair.get("chainId") != "solana":
+                    continue
+                
+                base_token = pair.get("baseToken", {})
+                mint = base_token.get("address")
                 if not mint or mint in seen_mints:
                     continue
 
-                mcap = float(coin.get("usd_market_cap", 0) or 0)
-                name = coin.get("name", "Unknown")
-                symbol = coin.get("symbol", "UNKNOWN")
-                twitter = coin.get("twitter", "")
+                mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
+                name = base_token.get("name", "Unknown")
                 
+                # Check for Twitter
+                socials = pair.get("info", {}).get("socials", [])
+                twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
+                
+                print(f"Checked: {name} | MCAP: ${mcap:.2f} | Twitter: {'YES' if twitter else 'NO'}", flush=True)
+
                 # Target range: $15k - $100k market cap and mandatory Twitter
                 if 15000 <= mcap <= 100000 and twitter:
                     seen_mints.add(mint)
                     payload = {
                         "tokenName": name,
-                        "tokenSymbol": symbol,
+                        "tokenSymbol": base_token.get("symbol"),
                         "market_cap": f"${mcap / 1000:.2f}K",
                         "marketCap": mcap,
                         "mint": mint,
@@ -68,13 +73,13 @@ def fetch_and_filter(seen_mints):
                         print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} (Status: {res.status_code})", flush=True)
 
         else:
-            print(f"⚠️ Pump.fun API error status: {resp.status_code}", flush=True)
+            print(f"⚠️ API error status: {resp.status_code}", flush=True)
 
     except Exception as e:
         print(f"❌ Scanner fetch error: {e}", flush=True)
 
 def main():
-    print("🚀 Real-time Pump.fun scanner running...", flush=True)
+    print("🚀 Secure pump listener running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
