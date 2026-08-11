@@ -116,44 +116,52 @@ def fetch_pump_fun_coins(seen_mints):
                         continue
 
                     mcap = float(coin.get("usd_market_cap", 0) or 0)
+                    migrated = coin.get("complete", False)
                     
-                    # CILJNI RANG: 10k do 30k na Pump.fun
-                    if 10000 <= mcap <= 30000:
-                        twitter = coin.get("twitter")
-                        if not twitter:
-                            continue  # Obvezen Twitter
+                    # RAŠIRJEN POGOJ:
+                    # 1. Zgodnji v rangu 10k do 30k
+                    # 2. ALI že migrirani na Raydium z market capom do 100k
+                    is_early = (10000 <= mcap <= 30000)
+                    is_migrated_target = (migrated and mcap <= 100000)
 
-                        seen_mints.add(mint)
-                        
-                        # Preverimo še DexScreener za status dex-a / booste
-                        dex_paid = False
-                        try:
-                            ds_url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
-                            ds_resp = requests.get(ds_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2)
-                            if ds_resp.status_code == 200:
-                                ds_data = ds_resp.json()
-                                pairs = ds_data.get("pairs", [])
-                                if pairs:
-                                    dex_paid = bool(pairs[0].get("boosts"))
-                        except Exception:
-                            pass
+                    if not (is_early or is_migrated_target):
+                        continue  # Preskoči, če ni v enem od obeh pogojev
 
-                        token_payload = {
-                            "mint": mint,
-                            "name": coin.get("name"),
-                            "symbol": coin.get("symbol"),
-                            "dev": coin.get("creator"),
-                            "market_cap": mcap,
-                            "twitterUrl": twitter,
-                            "dexPaid": dex_paid
-                        }
-                        process_and_send_token(token_payload)
+                    twitter = coin.get("twitter")
+                    if not twitter:
+                        continue  # Obvezen Twitter za obe skupini
+
+                    seen_mints.add(mint)
+                    
+                    # Preverimo še DexScreener za status dex-a / booste
+                    dex_paid = False
+                    try:
+                        ds_url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+                        ds_resp = requests.get(ds_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2)
+                        if ds_resp.status_code == 200:
+                            ds_data = ds_resp.json()
+                            pairs = ds_data.get("pairs", [])
+                            if pairs:
+                                dex_paid = bool(pairs[0].get("boosts"))
+                    except Exception:
+                        pass
+
+                    token_payload = {
+                        "mint": mint,
+                        "name": coin.get("name"),
+                        "symbol": coin.get("symbol"),
+                        "dev": coin.get("creator"),
+                        "market_cap": mcap,
+                        "twitterUrl": twitter,
+                        "dexPaid": dex_paid
+                    }
+                    process_and_send_token(token_payload)
     except Exception:
         pass
 
 
 def main():
-    print("Starting pump_listener active scanning loop (Pump.fun | $10k-$30k | Twitter Required)...", flush=True)
+    print("Starting pump_listener active scanning loop (10k-30k & Migrated up to 100k | Twitter Required)...", flush=True)
     seen_mints = set()
     loop_count = 0
     
@@ -166,7 +174,7 @@ def main():
 
             loop_count += 1
             if loop_count % 300 == 0:
-                print("🔍 Scanner heartbeat: Loop actively checking 10k-30k pump.fun coins...", flush=True)
+                print("🔍 Scanner heartbeat: Loop actively checking expanded token criteria...", flush=True)
 
             time.sleep(3)
 
