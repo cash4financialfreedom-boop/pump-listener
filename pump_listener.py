@@ -17,21 +17,17 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_and_filter(seen_mints):
-    # Uporabimo DexScreenerjev javni API za Solana tokene, ki ga Cloudflare ne blokira
-    url = "https://api.dexscreener.com/token-pairs/v1/solana"
+    # Uporabimo preverjen endpoint za zadnje ustvarjene/posodobljene tokene
+    url = "https://api.dexscreener.com/latest/dex/tokens/pump"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     
     try:
-        print("🔄 Fetching Solana pairs from DexScreener API...", flush=True)
         resp = requests.get(url, headers=headers, timeout=5)
-        
         if resp.status_code == 200:
-            pairs = resp.json()
-            if not pairs or not isinstance(pairs, list):
-                print("⚠️ Received empty data from DexScreener.", flush=True)
+            data = resp.json()
+            pairs = data.get("pairs", [])
+            if not pairs:
                 return
-            
-            print(f"📊 Total pairs fetched: {len(pairs)}", flush=True)
             
             for pair in pairs:
                 if pair.get("chainId") != "solana":
@@ -45,16 +41,13 @@ def fetch_and_filter(seen_mints):
                 mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
                 name = base_token.get("name", "Unknown")
                 
-                # Izločimo vse izven našega obsega 15k - 100k
-                if mcap < 15000 or mcap > 100000:
+                # Filtriranje točno po tvojem pasu in brez splošnih smeti
+                if mcap < 15000 or mcap > 100000 or name.lower() == "pump.fun":
                     continue
                 
-                # Preverimo obstoj Twitterja
                 socials = pair.get("info", {}).get("socials", [])
                 twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
                 
-                print(f"🎯 Target Found: {name} | MCAP: ${mcap:.2f} | Twitter: {'YES' if twitter else 'NO'}", flush=True)
-
                 if twitter:
                     seen_mints.add(mint)
                     payload = {
@@ -70,14 +63,11 @@ def fetch_and_filter(seen_mints):
                         res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
                         print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} (Status: {res.status_code})", flush=True)
 
-        else:
-            print(f"⚠️ DexScreener API error status: {resp.status_code}", flush=True)
-
     except Exception as e:
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Stable Solana API scanner running...", flush=True)
+    print("🚀 Direct token scanner running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
