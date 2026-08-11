@@ -19,9 +19,16 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_and_filter(seen_mints):
-    # Uporabimo uradni Pump.fun API za zadnje ustvarjene tokene v realnem času
     url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=created_timestamp&order=DESC"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    
+    # Izboljšane glave, da Cloudflare ne blokira zahteve (status 530)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://pump.fun",
+        "Referer": "https://pump.fun/"
+    }
     
     try:
         print("🔄 Fetching fresh tokens from Pump.fun API...", flush=True)
@@ -39,14 +46,11 @@ def fetch_and_filter(seen_mints):
                 if not mint or mint in seen_mints:
                     continue
 
-                # Izračun tržne kapitalizacije iz pump.fun podatkov (USD market cap)
                 mcap = float(coin.get("usd_market_cap", 0) or 0)
                 name = coin.get("name", "Unknown")
                 symbol = coin.get("symbol", "UNKNOWN")
                 twitter = coin.get("twitter", "")
                 
-                print(f"Checked: {name} | MCAP: ${mcap:.2f} | Twitter: {'YES' if twitter else 'NO'}", flush=True)
-
                 # Target range: $15k - $100k market cap and mandatory Twitter
                 if 15000 <= mcap <= 100000 and twitter:
                     seen_mints.add(mint)
