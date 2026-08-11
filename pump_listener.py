@@ -19,61 +19,58 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_and_filter(seen_mints):
-    # Uporabimo iskanje po ključni besedi "pump", ki dejansko vrne pump.fun in zgodnje raydium tokene
-    url = "https://api.dexscreener.com/latest/dex/search?q=pump"
+    # Uporabimo uradni Pump.fun API za zadnje ustvarjene tokene v realnem času
+    url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=created_timestamp&order=DESC"
     headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
+        print("🔄 Fetching fresh tokens from Pump.fun API...", flush=True)
         resp = requests.get(url, headers=headers, timeout=5)
+        
         if resp.status_code == 200:
-            data = resp.json()
-            if not data or not isinstance(data, dict):
+            coins = resp.json()
+            if not coins or not isinstance(coins, list):
                 return
             
-            pairs = data.get("pairs")
-            if not pairs or not isinstance(pairs, list):
-                return
+            print(f"📊 Total coins found: {len(coins)}", flush=True)
             
-            for pair in pairs:
-                if pair.get("chainId") != "solana":
-                    continue
-                
-                base_token = pair.get("baseToken", {})
-                mint = base_token.get("address")
+            for coin in coins:
+                mint = coin.get("mint")
                 if not mint or mint in seen_mints:
                     continue
 
-                mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
-                name = base_token.get("name", "Unknown")
+                # Izračun tržne kapitalizacije iz pump.fun podatkov (USD market cap)
+                mcap = float(coin.get("usd_market_cap", 0) or 0)
+                name = coin.get("name", "Unknown")
+                symbol = coin.get("symbol", "UNKNOWN")
+                twitter = coin.get("twitter", "")
                 
-                # Check for Twitter
-                socials = pair.get("info", {}).get("socials", [])
-                twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
-                
-                # TARGET RANGE: $15k - $100k AND mandatory Twitter
-                if 15000 <= mcap <= 100000:
-                    print(f"🎯 TARGET RANGE FOUND: {name} | MCAP: ${mcap:.2f} | Twitter: {'YES' if twitter else 'NO'}", flush=True)
-                    
-                    if twitter:
-                        seen_mints.add(mint)
-                        payload = {
-                            "tokenName": name,
-                            "tokenSymbol": base_token.get("symbol"),
-                            "market_cap": f"${mcap / 1000:.2f}K",
-                            "marketCap": mcap,
-                            "mint": mint,
-                            "twitterUrl": twitter,
-                            "pair_url": f"https://dexscreener.com/solana/{mint}"
-                        }
-                        if N8N_WEBHOOK_URL:
-                            res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
-                            print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} (Status: {res.status_code})", flush=True)
+                print(f"Checked: {name} | MCAP: ${mcap:.2f} | Twitter: {'YES' if twitter else 'NO'}", flush=True)
+
+                # Target range: $15k - $100k market cap and mandatory Twitter
+                if 15000 <= mcap <= 100000 and twitter:
+                    seen_mints.add(mint)
+                    payload = {
+                        "tokenName": name,
+                        "tokenSymbol": symbol,
+                        "market_cap": f"${mcap / 1000:.2f}K",
+                        "marketCap": mcap,
+                        "mint": mint,
+                        "twitterUrl": twitter,
+                        "pair_url": f"https://dexscreener.com/solana/{mint}"
+                    }
+                    if N8N_WEBHOOK_URL:
+                        res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
+                        print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} (Status: {res.status_code})", flush=True)
+
+        else:
+            print(f"⚠️ Pump.fun API error status: {resp.status_code}", flush=True)
 
     except Exception as e:
         print(f"❌ Scanner fetch error: {e}", flush=True)
 
 def main():
-    print("🚀 Precise target scanner running...", flush=True)
+    print("🚀 Real-time Pump.fun scanner running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
