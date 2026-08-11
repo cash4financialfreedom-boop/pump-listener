@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Pump Listener is Running!", 200
+    return "Raydium Sniper is Running!", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -17,71 +17,58 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
-def fetch_and_filter(seen_mints):
+def fetch_raydium_pairs(seen_mints):
+    # Birdeye endpoint za Raydium pare
     url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
-    
-    headers = {
-        "X-API-KEY": BIRDEYE_API_KEY,
-        "accept": "application/json",
-        "x-chain": "solana"
-    }
+    headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json", "x-chain": "solana"}
     
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             items = data.get("data", {}).get("items", [])
-            if not items:
-                print("ℹ️ Birdeye: Scanning active, waiting for new listings...", flush=True)
-                return
-            
             for item in items:
+                # Filtriranje: samo Raydium (source)
+                if item.get("source") != "raydium":
+                    continue
+                
                 mint = item.get("address")
-                if not mint or mint in seen_mints:
-                    continue
-
-                mcap = float(item.get("marketCap", 0) or item.get("liquidity", 0) or 0)
-                name = item.get("name", "Unknown")
-                symbol = item.get("symbol", "UNKNOWN")
+                mcap = float(item.get("marketCap", 0) or 0)
                 
-                # Filtriranje točno po tvojem pasu: 15k - 100k
-                if mcap < 15000 or mcap > 100000:
+                # Filter za tvoj pas: 50k - 150k
+                if mcap < 50000 or mcap > 150000:
                     continue
                 
-                twitter = item.get("twitter", "")
+                if mint in seen_mints:
+                    continue
                 
-                if twitter:
-                    seen_mints.add(mint)
-                    payload = {
-                        "tokenName": name,
-                        "tokenSymbol": symbol,
-                        "market_cap": f"${mcap / 1000:.2f}K",
-                        "marketCap": mcap,
-                        "mint": mint,
-                        "twitterUrl": twitter,
-                        "pair_url": f"https://dexscreener.com/solana/{mint}"
-                    }
-                    if N8N_WEBHOOK_URL:
-                        res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
-                        print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} (Status: {res.status_code})", flush=True)
-
-        elif resp.status_code == 429:
-            print("⚠️ Rate limit reached (429), pausing longer...", flush=True)
-            time.sleep(30)
-        else:
-            print(f"⚠️ Birdeye API error: {resp.status_code}", flush=True)
-
+                # Preverjanje Twitterja (extensions)
+                twitter = item.get("extensions", {}).get("twitter", "")
+                if not twitter:
+                    continue
+                
+                seen_mints.add(mint)
+                payload = {
+                    "tokenName": item.get("name"),
+                    "marketCap": mcap,
+                    "mint": mint,
+                    "twitterUrl": twitter,
+                    "pair_url": f"https://birdeye.so/token/{mint}?chain=solana"
+                }
+                
+                if N8N_WEBHOOK_URL:
+                    requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
+                    print(f"🎯 RAYDIUM SNIPE: {item.get('name')} (${mcap/1000:.0f}K)", flush=True)
+        
     except Exception as e:
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Birdeye Stable Ultra-Safe Scanner Running...", flush=True)
+    print("🚀 Raydium Sniper Active...", flush=True)
     seen_mints = set()
     while True:
-        fetch_and_filter(seen_mints)
-        if len(seen_mints) > 1000:
-            seen_mints.clear()
-        time.sleep(25) # Popolnoma varen interval, ki preprečuje vsakršne 429 napake
+        fetch_raydium_pairs(seen_mints)
+        time.sleep(10)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
