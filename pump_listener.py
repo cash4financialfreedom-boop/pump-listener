@@ -18,7 +18,6 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_and_filter(seen_mints):
-    # Preverjen uradni Birdeye endpoint za nove vnose
     url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
     
     headers = {
@@ -72,13 +71,13 @@ def fetch_and_filter(seen_mints):
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Birdeye Official New Listing Scanner Running...", flush=True)
+    print("🚀 Birdeye Fast New Listing Scanner Running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
         if len(seen_mints) > 1000:
             seen_mints.clear()
-        time.sleep(15) # Varno časovno obdobje znotraj rate limita
+        time.sleep(3) # Hitrejše preverjanje na vsake 3 sekunde
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
