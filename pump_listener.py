@@ -32,7 +32,7 @@ def fetch_and_filter(seen_mints):
             data = resp.json()
             items = data.get("data", {}).get("items", [])
             if not items:
-                print("ℹ️ Birdeye: No new items found right now.", flush=True)
+                print("ℹ️ Birdeye: Scanning active, waiting for new listings...", flush=True)
                 return
             
             for item in items:
@@ -65,20 +65,23 @@ def fetch_and_filter(seen_mints):
                         res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
                         print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} (Status: {res.status_code})", flush=True)
 
+        elif resp.status_code == 429:
+            print("⚠️ Rate limit reached (429), pausing longer...", flush=True)
+            time.sleep(30)
         else:
-            print(f"⚠️ Birdeye API error: {resp.status_code} - {resp.text}", flush=True)
+            print(f"⚠️ Birdeye API error: {resp.status_code}", flush=True)
 
     except Exception as e:
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Birdeye Balanced Scanner Running...", flush=True)
+    print("🚀 Birdeye Stable Ultra-Safe Scanner Running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
         if len(seen_mints) > 1000:
             seen_mints.clear()
-        time.sleep(8) # Varen interval na 8 sekund, ki preprečuje 429 napake
+        time.sleep(25) # Popolnoma varen interval, ki preprečuje vsakršne 429 napake
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
