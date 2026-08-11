@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Raydium Sniper (Expanded) is Running!", 200
+    return "Raydium Sniper is Running!", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -17,15 +17,33 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
+def send_test_ping():
+    time.sleep(5)
+    if N8N_WEBHOOK_URL:
+        test_payload = {
+            "tokenName": "TEST_COIN_VIP",
+            "marketCap": 50000,
+            "mint": "TestMintAddress123",
+            "twitterUrl": "https://twitter.com/test",
+            "pair_url": "https://birdeye.so"
+        }
+        try:
+            requests.post(N8N_WEBHOOK_URL, json=test_payload, timeout=5)
+            print("🧪 Testni klic poslan v n8n!", flush=True)
+        except Exception as e:
+            print(f"❌ Napaka pri testnem klicu: {e}", flush=True)
+
 def fetch_raydium_pairs(seen_mints):
     url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json", "x-chain": "solana"}
     
+    print("🔍 Preverjam nove Raydium pare...", flush=True)
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             items = data.get("data", {}).get("items", [])
+            print(f"📊 Najdenih {len(items)} skupnih vnosov. Filtriram...", flush=True)
             for item in items:
                 if item.get("source") != "raydium":
                     continue
@@ -33,7 +51,6 @@ def fetch_raydium_pairs(seen_mints):
                 mint = item.get("address")
                 mcap = float(item.get("marketCap", 0) or 0)
                 
-                # Razširjen pas: 30k - 300k
                 if mcap < 30000 or mcap > 300000:
                     continue
                 
@@ -67,13 +84,13 @@ def fetch_raydium_pairs(seen_mints):
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Raydium Sniper Active (30k-300k)...", flush=True)
+    print("🚀 Raydium Sniper Active...", flush=True)
     seen_mints = set()
     while True:
         fetch_raydium_pairs(seen_mints)
-        time.sleep(12) # Ravno prav hitro in varno
+        time.sleep(15)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
-    time.sleep(1)
+    threading.Thread(target=send_test_ping, daemon=True).start()
     main()
