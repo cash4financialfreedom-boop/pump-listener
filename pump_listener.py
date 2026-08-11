@@ -15,8 +15,6 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-threading.Thread(target=run_flask, daemon=True).start()
-
 # --- NASTAVITVE ---
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
@@ -29,6 +27,8 @@ def fetch_and_filter(seen_mints):
         if resp.status_code == 200:
             data = resp.json()
             pairs = data.get("pairs", [])
+            print(f"🔄 Preverjam {len(pairs)} parov iz DexScreenerja...", flush=True)
+            
             for pair in pairs:
                 if pair.get("chainId") != "solana":
                     continue
@@ -45,7 +45,7 @@ def fetch_and_filter(seen_mints):
                 socials = pair.get("info", {}).get("socials", [])
                 twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
 
-                # POGOJI: Če želiš, da spusti skozi, ko ima Twitter in ustreza rangu (npr. do 100k)
+                # POGOJI: Tržna kapitalizacija do 100k in da ima Twitter
                 is_target = (mcap <= 100000)
 
                 if is_target and twitter:
@@ -67,7 +67,7 @@ def fetch_and_filter(seen_mints):
         print(f"Napaka pri branju: {e}", flush=True)
 
 def main():
-    print("Skener deluje v čistem načinu...", flush=True)
+    print("🚀 Skener deluje v čistem načinu in neprekinjeno preverja trg...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
@@ -76,4 +76,7 @@ def main():
         time.sleep(5)
 
 if __name__ == "__main__":
+    # Najprej zaženemo Flask v ozadju za Renderjeve zahteve
+    threading.Thread(target=run_flask, daemon=True).start()
+    # Takoj za tem pa poženemo glavno zanko skenerja
     main()
