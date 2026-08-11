@@ -43,7 +43,6 @@ def process_and_send_token(token_data):
         print(f"Error: {e}", flush=True)
 
 def fetch_dexscreener_coins(seen_mints):
-    # Uporaba DexScreenerja za zadnje Solanske paritete (brez blokad)
     url = "https://api.dexscreener.com/latest/dex/search?q=pump"
     headers = {"User-Agent": "Mozilla/5.0"}
     
@@ -62,11 +61,8 @@ def fetch_dexscreener_coins(seen_mints):
                     continue
 
                 mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
-                
-                # Pogoji: 15k do 50k ALI do 100k
                 is_target = (15000 <= mcap <= 50000) or (mcap <= 100000)
                 
-                # Preverimo, če obstaja Twitter v socialnih povezavah
                 socials = pair.get("info", {}).get("socials", [])
                 twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
 
