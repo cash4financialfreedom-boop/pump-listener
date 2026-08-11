@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Raydium Sniper is Running!", 200
+    return "Raydium Sniper (Expanded) is Running!", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -33,7 +33,8 @@ def fetch_raydium_pairs(seen_mints):
                 mint = item.get("address")
                 mcap = float(item.get("marketCap", 0) or 0)
                 
-                if mcap < 50000 or mcap > 150000:
+                # Razširjen pas: 30k - 300k
+                if mcap < 30000 or mcap > 300000:
                     continue
                 
                 if mint in seen_mints:
@@ -66,11 +67,11 @@ def fetch_raydium_pairs(seen_mints):
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Raydium Sniper Active (Safe Mode)...", flush=True)
+    print("🚀 Raydium Sniper Active (30k-300k)...", flush=True)
     seen_mints = set()
     while True:
         fetch_raydium_pairs(seen_mints)
-        time.sleep(15) # Varen 15-sekundni interval za popolno stabilnost
+        time.sleep(12) # Ravno prav hitro in varno
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
