@@ -18,8 +18,8 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_and_filter(seen_mints):
-    # Pravilen in preverjen Birdeye endpoint za novoustanovljene tokene
-    url = "https://public-api.birdeye.so/defi/v2/tokens/newly_listed?limit=50"
+    # Točen in uradni Birdeye endpoint za nove tokene
+    url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
     
     headers = {
         "X-API-KEY": BIRDEYE_API_KEY,
@@ -36,11 +36,11 @@ def fetch_and_filter(seen_mints):
                 return
             
             for item in items:
-                mint = item.get("address") or item.get("mint")
+                mint = item.get("address")
                 if not mint or mint in seen_mints:
                     continue
 
-                mcap = float(item.get("marketCap", 0) or item.get("fdv", 0) or 0)
+                mcap = float(item.get("marketCap", 0) or item.get("liquidity", 0) or 0)
                 name = item.get("name", "Unknown")
                 symbol = item.get("symbol", "UNKNOWN")
                 
@@ -48,8 +48,7 @@ def fetch_and_filter(seen_mints):
                 if mcap < 15000 or mcap > 100000:
                     continue
                 
-                extensions = item.get("extensions", {})
-                twitter = extensions.get("twitter", "") if isinstance(extensions, dict) else ""
+                twitter = item.get("twitter", "")
                 
                 if twitter:
                     seen_mints.add(mint)
@@ -73,13 +72,13 @@ def fetch_and_filter(seen_mints):
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Birdeye newly listed scanner running...", flush=True)
+    print("🚀 Birdeye official new_listing scanner running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
         if len(seen_mints) > 1000:
             seen_mints.clear()
-        time.sleep(10)
+        time.sleep(15) # Povečano na 15 sekund, da preprečimo 429 Too Many Requests
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
