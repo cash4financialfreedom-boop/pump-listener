@@ -17,13 +17,13 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# --- SPREMENLJIVKE IN KONFIGURACIJA ---
+# --- VARIABLES & CONFIGURATION ---
 HELIUS_API_KEY = os.getenv("HELIUS_API_KEY", "")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def get_dev_history(dev_address):
     """
-    Hitro in varnostno izolirano preverjanje razvijalca (podpira serijske lansiralce).
+    Fast and safe developer history checker.
     """
     if not dev_address:
         return "Fresh Wallet (First Launch) 🆕"
@@ -33,7 +33,7 @@ def get_dev_history(dev_address):
         "Accept": "application/json"
     }
     
-    # 1. POSKUS: Direct Pump.fun API
+    # 1. TRY: Direct Pump.fun API
     try:
         url = f"https://frontend-api.pump.fun/coins/user-created-coins/{dev_address}?offset=0&limit=100&sort=created_timestamp&order=DESC"
         resp = requests.get(url, headers=headers, timeout=3)
@@ -48,7 +48,7 @@ def get_dev_history(dev_address):
     except Exception:
         pass
 
-    # 2. POSKUS: Helius API Fallback
+    # 2. TRY: Helius API Fallback
     if HELIUS_API_KEY:
         try:
             h_url = f"https://api.helius.xyz/v0/addresses/{dev_address}/transactions?api-key={HELIUS_API_KEY}"
@@ -72,51 +72,31 @@ def process_and_send_token(token_data):
         symbol = token_data.get("symbol", "TOKEN")
         dev_address = token_data.get("dev", "")
         mcap = token_data.get("market_cap", 0)
+        twitter_url = token_data.get("twitterUrl", "")
+        dex_paid = token_data.get("dexPaid", False)
 
         dev_history_str = get_dev_history(dev_address) if dev_address else "Fresh Wallet (First Launch) 🆕"
 
         payload = {
-            "name": name,
-            "symbol": symbol,
+            "tokenName": name,
+            "tokenSymbol": symbol,
             "market_cap": f"${mcap / 1000:.2f}K" if mcap > 0 else "$0K",
+            "marketCap": mcap,
             "dev_history": dev_history_str,
             "mint": mint,
+            "twitterUrl": twitter_url,
+            "dexPaid": "Paid" if dex_paid else "Not Paid Yet",
             "pair_url": f"https://dexscreener.com/solana/{mint}" if mint else ""
         }
 
         if N8N_WEBHOOK_URL:
             resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
-            # Dodan flush=True zagotovi takojšen prikaz v Render logih!
             print(f"✅ TOKEN PASSED (${mcap / 1000:.2f}K)! Sent to n8n: {name} (${symbol})", flush=True)
         else:
             print("Warning: N8N_WEBHOOK_URL is not set!", flush=True)
 
     except Exception as e:
         print(f"Error processing token payload: {e}", flush=True)
-
-
-def is_viral_token(coin):
-    has_website = bool(coin.get("website"))
-    has_twitter = bool(coin.get("twitter"))
-    has_telegram = bool(coin.get("telegram"))
-    
-    desc = str(coin.get("description", "")).lower()
-    name = str(coin.get("name", "")).lower()
-    symbol = str(coin.get("symbol", "")).lower()
-    
-    full_text = f"{name} {symbol} {desc}"
-
-    viral_keywords = [
-        "elon", "musk", "tweet", "x.com", "post", "grok", "tesla", "spacex", "doge",
-        "trump", "maga", "kamala", "biden", "president", "usa", "election",
-        "tiktok", "instagram", "ig", "reel", "youtube", "yt", "viral",
-        "cat", "dog", "shib", "pepe", "frog", "hippo", "moo", "trend", "meme", "ai", "pump"
-    ]
-    
-    has_viral_keyword = any(keyword in full_text for keyword in viral_keywords)
-    has_valid_desc = len(desc.strip()) > 15
-
-    return has_website or has_twitter or has_telegram or has_viral_keyword or has_valid_desc
 
 
 def fetch_pump_fun_coins(seen_mints):
@@ -137,86 +117,56 @@ def fetch_pump_fun_coins(seen_mints):
 
                     mcap = float(coin.get("usd_market_cap", 0) or 0)
                     
-                    if 15000 <= mcap <= 50000:
-                        if is_viral_token(coin):
-                            seen_mints.add(mint)
-                            token_payload = {
-                                "mint": mint,
-                                "name": coin.get("name"),
-                                "symbol": coin.get("symbol"),
-                                "dev": coin.get("creator"),
-                                "market_cap": mcap
-                            }
-                            process_and_send_token(token_payload)
-    except Exception:
-        pass
+                    # CILJNI RANG: 10k do 30k na Pump.fun
+                    if 10000 <= mcap <= 30000:
+                        twitter = coin.get("twitter")
+                        if not twitter:
+                            continue  # Obvezen Twitter
 
-
-def check_migrated_dex_tokens(seen_mints):
-    try:
-        url = "https://api.dexscreener.com/token-profiles/recent-updates/v1"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        
-        resp = requests.get(url, headers=headers, timeout=3)
-        if resp.status_code == 200:
-            profiles = resp.json()
-            if isinstance(profiles, list):
-                for item in profiles:
-                    if item.get("chainId") == "solana":
-                        token_address = item.get("tokenAddress")
-                        if not token_address or token_address in seen_mints:
-                            continue
+                        seen_mints.add(mint)
                         
-                        pair_url = f"https://api.dexscreener.com/latest/dex/tokens/{token_address}"
-                        p_resp = requests.get(pair_url, headers=headers, timeout=3)
-                        if p_resp.status_code == 200:
-                            data = p_resp.json()
-                            pairs = data.get("pairs", [])
-                            if pairs and len(pairs) > 0:
-                                pair = pairs[0]
-                                mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
-                                
-                                if 15000 <= mcap <= 50000:
-                                    seen_mints.add(token_address)
-                                    base_token = pair.get("baseToken", {})
-                                    
-                                    dev_creator = ""
-                                    try:
-                                        pf_url = f"https://frontend-api.pump.fun/coins/{token_address}"
-                                        pf_resp = requests.get(pf_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2)
-                                        if pf_resp.status_code == 200:
-                                            dev_creator = pf_resp.json().get("creator", "")
-                                    except Exception:
-                                        pass
+                        # Preverimo še DexScreener za status dex-a / booste
+                        dex_paid = False
+                        try:
+                            ds_url = f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+                            ds_resp = requests.get(ds_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=2)
+                            if ds_resp.status_code == 200:
+                                ds_data = ds_resp.json()
+                                pairs = ds_data.get("pairs", [])
+                                if pairs:
+                                    dex_paid = bool(pairs[0].get("boosts"))
+                        except Exception:
+                            pass
 
-                                    token_payload = {
-                                        "mint": token_address,
-                                        "name": base_token.get("name", "Migrated Token"),
-                                        "symbol": base_token.get("symbol", "DEX"),
-                                        "dev": dev_creator,
-                                        "market_cap": mcap
-                                    }
-                                    process_and_send_token(token_payload)
+                        token_payload = {
+                            "mint": mint,
+                            "name": coin.get("name"),
+                            "symbol": coin.get("symbol"),
+                            "dev": coin.get("creator"),
+                            "market_cap": mcap,
+                            "twitterUrl": twitter,
+                            "dexPaid": dex_paid
+                        }
+                        process_and_send_token(token_payload)
     except Exception:
         pass
 
 
 def main():
-    print("Starting pump_listener active scanning loop ($15k-$50k | Direct Dev Check + Helius Fallback)...", flush=True)
+    print("Starting pump_listener active scanning loop (Pump.fun | $10k-$30k | Twitter Required)...", flush=True)
     seen_mints = set()
     loop_count = 0
     
     while True:
         try:
             fetch_pump_fun_coins(seen_mints)
-            check_migrated_dex_tokens(seen_mints)
 
             if len(seen_mints) > 1000:
                 seen_mints.clear()
 
             loop_count += 1
             if loop_count % 300 == 0:
-                print("🔍 Scanner heartbeat: Loop actively checking coins...", flush=True)
+                print("🔍 Scanner heartbeat: Loop actively checking 10k-30k pump.fun coins...", flush=True)
 
             time.sleep(3)
 
