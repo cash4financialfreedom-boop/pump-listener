@@ -4,7 +4,6 @@ import threading
 import requests
 from flask import Flask
 
-# --- FLASK SERVER ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -15,7 +14,6 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# --- SCANNER LOGIC ---
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_and_filter(seen_mints):
@@ -45,15 +43,17 @@ def fetch_and_filter(seen_mints):
                 mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
                 name = base_token.get("name", "Unknown")
                 
-                # Izločimo lažne/prazne vnose (0 kapitalizacija ali splošno ime)
-                if mcap <= 0 or name.lower() in ["pump.fun", "unknown"]:
+                # Preskočimo samo tisto, kar je očitno neveljavno
+                if mcap < 100 or name.lower() == "pump.fun":
                     continue
                 
-                # Check for Twitter
                 socials = pair.get("info", {}).get("socials", [])
                 twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
                 
-                # Veljaven obseg: $3,000 - $100,000 in obvezen Twitter
+                # Izpišemo vsak veljaven kovanec, da točno vidiš dogajanje v logih
+                print(f"Token: {name} | MCAP: ${mcap:.2f} | Twitter: {'YES' if twitter else 'NO'}", flush=True)
+
+                # Ciljni obseg: $3,000 do $100,000 in obvezen Twitter
                 if 3000 <= mcap <= 100000 and twitter:
                     seen_mints.add(mint)
                     payload = {
@@ -67,13 +67,13 @@ def fetch_and_filter(seen_mints):
                     }
                     if N8N_WEBHOOK_URL:
                         res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
-                        print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} | Twitter: {twitter} (Status: {res.status_code})", flush=True)
+                        print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} (Status: {res.status_code})", flush=True)
 
     except Exception as e:
-        print(f"❌ Scanner fetch error: {e}", flush=True)
+        print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Clean pump listener running...", flush=True)
+    print("🚀 Stable scanner running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
