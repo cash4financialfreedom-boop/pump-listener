@@ -43,17 +43,18 @@ def fetch_and_filter(seen_mints):
                 mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
                 name = base_token.get("name", "Unknown")
                 
-                # Izločimo vse pod 15k (smeti) in nad 100k ter splošna imena
+                # Takoj zavržemo vse, kar ni v našem želenem rangu 15k - 100k ali je smet
                 if mcap < 15000 or mcap > 100000 or name.lower() == "pump.fun":
                     continue
                 
                 socials = pair.get("info", {}).get("socials", [])
                 twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
                 
-                print(f"Target Matched: {name} | MCAP: ${mcap:.2f} | Twitter: {'YES' if twitter else 'NO'}", flush=True)
+                # Izpišemo samo tiste, ki so dejansko prišli skozi primarni filter
+                print(f"🎯 Target Range Coin: {name} | MCAP: ${mcap:.2f} | Twitter: {'YES' if twitter else 'NO'}", flush=True)
 
-                # Strogo točen obseg: 15k do 100k in obvezen Twitter
-                if 15000 <= mcap <= 100000 and twitter:
+                # Pogoj za obvezen Twitter in pošiljanje naprej
+                if twitter:
                     seen_mints.add(mint)
                     payload = {
                         "tokenName": name,
@@ -72,7 +73,7 @@ def fetch_and_filter(seen_mints):
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Precise 15k-100k strategy scanner running...", flush=True)
+    print("🚀 Clean 15k-100k scanner running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
