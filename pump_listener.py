@@ -40,22 +40,14 @@ def fetch_and_filter(seen_mints):
 
                 mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
                 name = base_token.get("name", "Unknown")
-                dex_id = pair.get("dexId", "").lower()
                 
-                # Check socials for Twitter
-                socials = pair.get("info", {}).get("socials", [])
-                twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
+                # Izpisemo tržno kapitalizacijo vsakega najdenega kovanca v loge, da vidimo kje se gibljejo!
+                print(f"Iskan kovanec: {name} | MCAP: ${mcap:.2f}", flush=True)
 
-                # TARGET RANGES:
-                # 1) Pump.fun tokens: $15k - $30k market cap
-                # 2) Raydium tokens: $30k - $100k market cap
-                is_pumpfun_target = (15000 <= mcap <= 30000) and ("pump" in dex_id or mcap <= 30000)
-                is_raydium_target = (30000 < mcap <= 100000) and ("raydium" in dex_id or "raydium" in pair.get("url", "").lower())
-                
-                # If you want to accept tokens fitting either rule as long as they have Twitter:
+                # Ciljni razpon: med 15k in 100k (brez pogoja za Twitter za test)
                 is_target = (15000 <= mcap <= 100000)
 
-                if is_target and twitter:
+                if is_target:
                     seen_mints.add(mint)
                     payload = {
                         "tokenName": name,
@@ -63,7 +55,7 @@ def fetch_and_filter(seen_mints):
                         "market_cap": f"${mcap / 1000:.2f}K",
                         "marketCap": mcap,
                         "mint": mint,
-                        "twitterUrl": twitter,
+                        "twitterUrl": "Not checked",
                         "pair_url": f"https://dexscreener.com/solana/{mint}"
                     }
                     if N8N_WEBHOOK_URL:
@@ -74,7 +66,7 @@ def fetch_and_filter(seen_mints):
         print(f"Fetch error: {e}", flush=True)
 
 def main():
-    print("🚀 Scanner is running and continuously checking the market...", flush=True)
+    print("🚀 Scanner is running and checking market...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
@@ -83,7 +75,5 @@ def main():
         time.sleep(5)
 
 if __name__ == "__main__":
-    # Start Flask in the background for Render health checks
     threading.Thread(target=run_flask, daemon=True).start()
-    # Start the main scanner loop
     main()
