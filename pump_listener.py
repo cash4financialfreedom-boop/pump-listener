@@ -42,47 +42,53 @@ def process_and_send_token(token_data):
     except Exception as e:
         print(f"Error: {e}", flush=True)
 
-def fetch_pump_fun_coins(seen_mints):
-    # UPORABA GLAVNEGA DOMENSKEGA ENDPOINTA (ta deluje)
-    url = "https://pump.fun/api/coins" 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Referer": "https://pump.fun/"
-    }
+def fetch_dexscreener_coins(seen_mints):
+    # Uporaba DexScreenerja za zadnje Solanske paritete (brez blokad)
+    url = "https://api.dexscreener.com/latest/dex/search?q=pump"
+    headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
         resp = requests.get(url, headers=headers, timeout=5)
         if resp.status_code == 200:
-            coins = resp.json()
-            for coin in coins:
-                mint = coin.get("mint")
+            data = resp.json()
+            pairs = data.get("pairs", [])
+            for pair in pairs:
+                if pair.get("chainId") != "solana":
+                    continue
+                
+                base_token = pair.get("baseToken", {})
+                mint = base_token.get("address")
                 if not mint or mint in seen_mints:
                     continue
 
-                mcap = float(coin.get("usd_market_cap", 0))
-                migrated = coin.get("complete", False)
+                mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
                 
-                # POGOJI: 15k-50k ALI migrirani do 100k
-                is_target = (15000 <= mcap <= 50000) or (migrated and mcap <= 100000)
-                twitter = coin.get("twitter")
+                # Pogoji: 15k do 50k ALI do 100k
+                is_target = (15000 <= mcap <= 50000) or (mcap <= 100000)
+                
+                # Preverimo, če obstaja Twitter v socialnih povezavah
+                socials = pair.get("info", {}).get("socials", [])
+                twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
 
                 if is_target and twitter:
                     seen_mints.add(mint)
                     process_and_send_token({
                         "mint": mint,
-                        "name": coin.get("name"),
-                        "symbol": coin.get("symbol"),
+                        "name": base_token.get("name"),
+                        "symbol": base_token.get("symbol"),
                         "market_cap": mcap,
                         "twitterUrl": twitter
                     })
     except Exception as e:
-        print(f"API Error (using main domain): {e}", flush=True)
+        print(f"DexScreener API Error: {e}", flush=True)
 
 def main():
-    print("Scanner active on main domain...", flush=True)
+    print("Scanner active via DexScreener API...", flush=True)
     seen_mints = set()
     while True:
-        fetch_pump_fun_coins(seen_mints)
+        fetch_dexscreener_coins(seen_mints)
+        if len(seen_mints) > 1000:
+            seen_mints.clear()
         time.sleep(5)
 
 if __name__ == "__main__":
