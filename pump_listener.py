@@ -17,8 +17,7 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_and_filter(seen_mints):
-    # Uporabimo točen endpoint za pump.fun zadetke
-    url = "https://api.dexscreener.com/latest/dex/tokens/pump"
+    url = "https://api.dexscreener.com/latest/dex/search?q=pump"
     headers = {"User-Agent": "Mozilla/5.0"}
     
     try:
@@ -26,8 +25,11 @@ def fetch_and_filter(seen_mints):
         if resp.status_code == 200:
             data = resp.json()
             pairs = data.get("pairs", [])
-            print(f"🔄 Checking {len(pairs)} pairs...", flush=True)
             
+            # Varno preverjanje, če pairs sploh obstaja in ni None
+            if not pairs or not isinstance(pairs, list):
+                return
+                
             for pair in pairs:
                 if pair.get("chainId") != "solana":
                     continue
