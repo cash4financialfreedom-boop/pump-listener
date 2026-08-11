@@ -4,7 +4,7 @@ import threading
 import requests
 from flask import Flask
 
-# --- FLASK SERVER ZA RENDER ---
+# --- FLASK SERVER FOR RENDER ---
 app = Flask(__name__)
 
 @app.route('/')
@@ -15,7 +15,7 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# --- NASTAVITVE ---
+# --- SETTINGS ---
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_and_filter(seen_mints):
@@ -27,7 +27,7 @@ def fetch_and_filter(seen_mints):
         if resp.status_code == 200:
             data = resp.json()
             pairs = data.get("pairs", [])
-            print(f"🔄 Preverjam {len(pairs)} parov iz DexScreenerja...", flush=True)
+            print(f"🔄 Checking {len(pairs)} pairs from DexScreener...", flush=True)
             
             for pair in pairs:
                 if pair.get("chainId") != "solana":
@@ -40,13 +40,20 @@ def fetch_and_filter(seen_mints):
 
                 mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
                 name = base_token.get("name", "Unknown")
+                dex_id = pair.get("dexId", "").lower()
                 
-                # Preverimo, če obstaja Twitter v socialnih povezavah
+                # Check socials for Twitter
                 socials = pair.get("info", {}).get("socials", [])
                 twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
 
-                # POGOJI: Tržna kapitalizacija do 100k in da ima Twitter
-                is_target = (mcap <= 100000)
+                # TARGET RANGES:
+                # 1) Pump.fun tokens: $15k - $30k market cap
+                # 2) Raydium tokens: $30k - $100k market cap
+                is_pumpfun_target = (15000 <= mcap <= 30000) and ("pump" in dex_id or mcap <= 30000)
+                is_raydium_target = (30000 < mcap <= 100000) and ("raydium" in dex_id or "raydium" in pair.get("url", "").lower())
+                
+                # If you want to accept tokens fitting either rule as long as they have Twitter:
+                is_target = (15000 <= mcap <= 100000)
 
                 if is_target and twitter:
                     seen_mints.add(mint)
@@ -61,13 +68,13 @@ def fetch_and_filter(seen_mints):
                     }
                     if N8N_WEBHOOK_URL:
                         requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
-                        print(f"✅ POSLAN TOKEN (${mcap / 1000:.2f}K): {name}", flush=True)
+                        print(f"✅ SENT TOKEN (${mcap / 1000:.2f}K): {name}", flush=True)
 
     except Exception as e:
-        print(f"Napaka pri branju: {e}", flush=True)
+        print(f"Fetch error: {e}", flush=True)
 
 def main():
-    print("🚀 Skener deluje v čistem načinu in neprekinjeno preverja trg...", flush=True)
+    print("🚀 Scanner is running and continuously checking the market...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
@@ -76,7 +83,7 @@ def main():
         time.sleep(5)
 
 if __name__ == "__main__":
-    # Najprej zaženemo Flask v ozadju za Renderjeve zahteve
+    # Start Flask in the background for Render health checks
     threading.Thread(target=run_flask, daemon=True).start()
-    # Takoj za tem pa poženemo glavno zanko skenerja
+    # Start the main scanner loop
     main()
