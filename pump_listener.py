@@ -18,7 +18,6 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_raydium_pairs(seen_mints):
-    # Birdeye endpoint za Raydium pare
     url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json", "x-chain": "solana"}
     
@@ -28,21 +27,18 @@ def fetch_raydium_pairs(seen_mints):
             data = resp.json()
             items = data.get("data", {}).get("items", [])
             for item in items:
-                # Filtriranje: samo Raydium (source)
                 if item.get("source") != "raydium":
                     continue
                 
                 mint = item.get("address")
                 mcap = float(item.get("marketCap", 0) or 0)
                 
-                # Filter za tvoj pas: 50k - 150k
                 if mcap < 50000 or mcap > 150000:
                     continue
                 
                 if mint in seen_mints:
                     continue
                 
-                # Preverjanje Twitterja (extensions)
                 twitter = item.get("extensions", {}).get("twitter", "")
                 if not twitter:
                     continue
@@ -59,16 +55,22 @@ def fetch_raydium_pairs(seen_mints):
                 if N8N_WEBHOOK_URL:
                     requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
                     print(f"🎯 RAYDIUM SNIPE: {item.get('name')} (${mcap/1000:.0f}K)", flush=True)
+                    
+        elif resp.status_code == 429:
+            print("⚠️ Rate limit reached (429), pausing longer...", flush=True)
+            time.sleep(30)
+        else:
+            print(f"⚠️ Birdeye API error: {resp.status_code}", flush=True)
         
     except Exception as e:
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Raydium Sniper Active...", flush=True)
+    print("🚀 Raydium Sniper Active (Safe Mode)...", flush=True)
     seen_mints = set()
     while True:
         fetch_raydium_pairs(seen_mints)
-        time.sleep(10)
+        time.sleep(15) # Varen 15-sekundni interval za popolno stabilnost
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
