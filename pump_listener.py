@@ -15,44 +15,47 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
+BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_and_filter(seen_mints):
-    # Uporabimo preverjen endpoint za zadnje ustvarjene/posodobljene tokene
-    url = "https://api.dexscreener.com/latest/dex/tokens/pump"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    # Birdeye endpoint za nove tokene na Solani
+    url = "https://public-api.birdeye.so/defi/v3/token/list-new"
+    
+    headers = {
+        "X-API-KEY": BIRDEYE_API_KEY,
+        "accept": "application/json",
+        "x-chain": "solana"
+    }
     
     try:
-        resp = requests.get(url, headers=headers, timeout=5)
+        resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
-            pairs = data.get("pairs", [])
-            if not pairs:
+            items = data.get("data", {}).get("items", [])
+            if not items:
                 return
             
-            for pair in pairs:
-                if pair.get("chainId") != "solana":
-                    continue
-                
-                base_token = pair.get("baseToken", {})
-                mint = base_token.get("address")
+            for item in items:
+                mint = item.get("address")
                 if not mint or mint in seen_mints:
                     continue
 
-                mcap = float(pair.get("fdv", 0) or pair.get("marketCap", 0) or 0)
-                name = base_token.get("name", "Unknown")
+                mcap = float(item.get("marketCap", 0) or item.get("fdv", 0) or 0)
+                name = item.get("name", "Unknown")
+                symbol = item.get("symbol", "UNKNOWN")
                 
-                # Filtriranje točno po tvojem pasu in brez splošnih smeti
-                if mcap < 15000 or mcap > 100000 or name.lower() == "pump.fun":
+                # Filtriranje: 15k - 100k
+                if mcap < 15000 or mcap > 100000:
                     continue
                 
-                socials = pair.get("info", {}).get("socials", [])
-                twitter = next((s.get("url") for s in socials if s.get("type") == "twitter"), "")
+                extensions = item.get("extensions", {})
+                twitter = extensions.get("twitter", "")
                 
                 if twitter:
                     seen_mints.add(mint)
                     payload = {
                         "tokenName": name,
-                        "tokenSymbol": base_token.get("symbol"),
+                        "tokenSymbol": symbol,
                         "market_cap": f"${mcap / 1000:.2f}K",
                         "marketCap": mcap,
                         "mint": mint,
@@ -60,20 +63,23 @@ def fetch_and_filter(seen_mints):
                         "pair_url": f"https://dexscreener.com/solana/{mint}"
                     }
                     if N8N_WEBHOOK_URL:
-                        res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=4)
+                        res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
                         print(f"✅ SENT TO N8N (${mcap / 1000:.2f}K): {name} (Status: {res.status_code})", flush=True)
+
+        else:
+            print(f"⚠️ Birdeye API error: {resp.status_code}", flush=True)
 
     except Exception as e:
         print(f"❌ Error: {e}", flush=True)
 
 def main():
-    print("🚀 Direct token scanner running...", flush=True)
+    print("🚀 Birdeye stable scanner running...", flush=True)
     seen_mints = set()
     while True:
         fetch_and_filter(seen_mints)
         if len(seen_mints) > 1000:
             seen_mints.clear()
-        time.sleep(5)
+        time.sleep(10) # Birdeye rate limit 60rpm, 10s je varno
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
