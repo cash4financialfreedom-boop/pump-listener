@@ -16,63 +16,58 @@ def run_flask():
 
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
-# Uporabimo uradni javni Solana RPC node (brezplačen, brez API ključev in kvot)
-SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
-
-def fetch_solana_onchain(seen_mints):
-    print("Checking Solana RPC blockchain directly...", flush=True)
+def fetch_raydium_market(seen_mints):
+    # Zanesljiv javni vir za sveže Solana unose z vsemi podatki
+    url = "https://api.dexscreener.com/latest/dex/tokens/solana"
     
-    # JSON-RPC klic za zadnje transakcije / podpisane unose na Raydium Liquidity Pool programu
-    # Raydium AMM Program ID: 675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getSignaturesForAddress",
-        "params": [
-            "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
-            {"limit": 5}
-        ]
-    }
-    
+    print("Fetching active tokens with full details...", flush=True)
     try:
-        resp = requests.post(SOLANA_RPC_URL, json=payload, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(url, headers=headers, timeout=10)
+        
         if resp.status_code == 200:
             data = resp.json()
-            signatures = data.get("result", [])
+            pairs = data.get("pairs", [])
             
-            for sig_info in signatures:
-                sig = sig_info.get("signature")
-                if not sig or sig in seen_mints:
+            for pair in pairs:
+                base_token = pair.get("baseToken", {})
+                mint = base_token.get("address")
+                name = base_token.get("name")
+                
+                if not mint or not name or mint in seen_mints:
                     continue
                 
-                seen_mints.add(sig)
+                seen_mints.add(mint)
                 
-                # Ko najdemo novo transakcijo na Raydiumu, jo pošljemo naprej v n8n z direktnim linkom na verigo
-                hook_payload = {
-                    "tokenName": f"Solana-Raydium-Tx",
-                    "marketCap": 50000,
-                    "mint": sig,
-                    "twitterUrl": f"https://twitter.com/search?q={sig}",
-                    "pair_url": f"https://solscan.io/tx/{sig}"
+                market_cap = pair.get("marketCap")
+                if not market_cap:
+                    market_cap = pair.get("fdv", 50000)
+                
+                payload = {
+                    "tokenName": name,
+                    "marketCap": market_cap,
+                    "mint": mint,
+                    "twitterUrl": f"https://twitter.com/search?q={mint}",
+                    "pair_url": pair.get("url", f"https://dexscreener.com/solana/{mint}")
                 }
                 
                 if N8N_WEBHOOK_URL:
                     try:
-                        requests.post(N8N_WEBHOOK_URL, json=hook_payload, timeout=5)
-                        print(f"SUCCESSFULLY SENT ON-CHAIN TX TO N8N: {sig[:10]}...", flush=True)
+                        requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
+                        print(f"SUCCESSFULLY SENT FULL DATA TO N8N: {name}", flush=True)
                     except Exception as err:
                         print(f"Webhook error: {err}", flush=True)
                 
                 break
     except Exception as e:
-        print(f"RPC Error: {e}", flush=True)
+        print(f"Error: {e}", flush=True)
 
 def main():
-    print("Sniper Active via Direct Solana RPC...", flush=True)
+    print("Sniper Active - Full Data Stream...", flush=True)
     seen_mints = set()
     while True:
-        fetch_solana_onchain(seen_mints)
-        time.sleep(15)
+        fetch_raydium_market(seen_mints)
+        time.sleep(30)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
