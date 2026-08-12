@@ -17,21 +17,29 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_raydium_market(seen_mints):
-    # Uporabimo zanesljiv in brezplačen endpoint, ki ne zahteva ključev in ne beleži "compute units"
     url = "https://api.dexscreener.com/latest/dex/tokens/solana"
     
-    print("Scanning market securely...", flush=True)
+    print("Fetching fresh tokens...", flush=True)
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, timeout=10)
         
         if resp.status_code == 200:
             data = resp.json()
-            pairs = data.get("pairs", [])
+            if not isinstance(data, dict):
+                return
+            
+            pairs = data.get("pairs")
+            if not pairs or not isinstance(pairs, list):
+                return
             
             for pair in pairs:
-                mint = pair.get("baseToken", {}).get("address")
-                name = pair.get("baseToken", {}).get("name", "Unknown")
+                base_token = pair.get("baseToken")
+                if not base_token or not isinstance(base_token, dict):
+                    continue
+                
+                mint = base_token.get("address")
+                name = base_token.get("name", "Unknown")
                 
                 if not mint or mint in seen_mints:
                     continue
@@ -53,13 +61,11 @@ def fetch_raydium_market(seen_mints):
                         print(f"Webhook error: {err}", flush=True)
                 
                 break
-        else:
-            print(f"API status code: {resp.status_code}", flush=True)
     except Exception as e:
         print(f"Error: {e}", flush=True)
 
 def main():
-    print("Sniper Active - Direct Connection...", flush=True)
+    print("Sniper Active...", flush=True)
     seen_mints = set()
     while True:
         fetch_raydium_market(seen_mints)
