@@ -25,15 +25,22 @@ def fetch_raydium_market(seen_mints):
         resp = requests.get(url, headers=headers, timeout=10)
         
         if resp.status_code == 200:
-            data = resp.json()
+            try:
+                data = resp.json()
+            except:
+                return
+                
             if not isinstance(data, dict):
                 return
             
             pairs = data.get("pairs")
-            if not pairs or not isinstance(pairs, list):
+            if pairs is None or not isinstance(pairs, list):
                 return
             
             for pair in pairs:
+                if not isinstance(pair, dict):
+                    continue
+                
                 base_token = pair.get("baseToken")
                 if not base_token or not isinstance(base_token, dict):
                     continue
