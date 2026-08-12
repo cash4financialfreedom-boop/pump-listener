@@ -18,33 +18,29 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_raydium_market(seen_mints):
-    # Popravljen in preverjen Birdeye endpoint za nove unose
-    url = "https://public-api.birdeye.so/defi/v3/token/list-new"
+    # Uporabimo pravilen in preverjen Birdeye endpoint za nove unose
+    url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json", "x-chain": "solana"}
     
-    print("Scanning Raydium market safely...", flush=True)
+    print("Scanning Birdeye new listings...", flush=True)
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         
         if resp.status_code == 200:
             data = resp.json()
-            # Podatki so lahko v list-new pod 'items' ali 'tokens'
-            items = data.get("data", {}).get("items", []) or data.get("data", {}).get("tokens", [])
+            items = data.get("data", {}).get("items", [])
             
             for item in items:
-                mint = item.get("address") or item.get("mint")
+                mint = item.get("address")
                 name = item.get("name", "Unknown")
                 
-                if not mint:
-                    continue
-                
-                if mint in seen_mints:
+                if not mint or mint in seen_mints:
                     continue
                 
                 seen_mints.add(mint)
                 payload = {
                     "tokenName": name,
-                    "marketCap": item.get("marketCap", 50000),
+                    "marketCap": item.get("marketCap", 50000) or 50000,
                     "mint": mint,
                     "twitterUrl": f"https://twitter.com/search?q={mint}",
                     "pair_url": f"https://birdeye.so/token/{mint}?chain=solana"
@@ -68,11 +64,11 @@ def fetch_raydium_market(seen_mints):
         print(f"Error: {e}", flush=True)
 
 def main():
-    print("Sniper Active - Rate Limited Flow...", flush=True)
+    print("Sniper Active via Birdeye...", flush=True)
     seen_mints = set()
     while True:
         fetch_raydium_market(seen_mints)
-        time.sleep(30)
+        time.sleep(15)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
