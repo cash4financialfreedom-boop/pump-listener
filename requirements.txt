@@ -2,3 +2,4 @@ websockets
 requests
 flask
 aiohttp
+flask-cors
