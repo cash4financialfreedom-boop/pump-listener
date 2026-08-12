@@ -18,7 +18,8 @@ N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_raydium_market(seen_mints):
-    url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
+    # Popravljen in preverjen Birdeye endpoint za nove unose
+    url = "https://public-api.birdeye.so/defi/v3/token/list-new"
     headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json", "x-chain": "solana"}
     
     print("Scanning Raydium market safely...", flush=True)
@@ -27,15 +28,14 @@ def fetch_raydium_market(seen_mints):
         
         if resp.status_code == 200:
             data = resp.json()
-            items = data.get("data", {}).get("items", [])
+            # Podatki so lahko v list-new pod 'items' ali 'tokens'
+            items = data.get("data", {}).get("items", []) or data.get("data", {}).get("tokens", [])
             
-            # Vzmemo samo prvi neraziskani kovanec, da ne zamašimo n8n-a
             for item in items:
-                source = item.get("source")
-                mint = item.get("address")
+                mint = item.get("address") or item.get("mint")
                 name = item.get("name", "Unknown")
                 
-                if source not in ["raydium", "raydium_clamm"]:
+                if not mint:
                     continue
                 
                 if mint in seen_mints:
@@ -44,7 +44,7 @@ def fetch_raydium_market(seen_mints):
                 seen_mints.add(mint)
                 payload = {
                     "tokenName": name,
-                    "marketCap": 50000,
+                    "marketCap": item.get("marketCap", 50000),
                     "mint": mint,
                     "twitterUrl": f"https://twitter.com/search?q={mint}",
                     "pair_url": f"https://birdeye.so/token/{mint}?chain=solana"
@@ -57,12 +57,13 @@ def fetch_raydium_market(seen_mints):
                     except Exception as err:
                         print(f"Webhook error: {err}", flush=True)
                 
-                # Posredujemo samo enega na cikel, da n8n in Claude normalno obdelata
                 break
-                    
+                
         elif resp.status_code == 429:
             print("Rate limit 429, resting...", flush=True)
             time.sleep(30)
+        else:
+            print(f"Birdeye API status code: {resp.status_code}, response: {resp.text}", flush=True)
     except Exception as e:
         print(f"Error: {e}", flush=True)
 
@@ -71,7 +72,7 @@ def main():
     seen_mints = set()
     while True:
         fetch_raydium_market(seen_mints)
-        time.sleep(30) # Počakaj 30 sekund pred naslednjim preverjanjem
+        time.sleep(30)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
