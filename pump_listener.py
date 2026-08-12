@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Raydium Sniper is Running!", 200
+    return "Pump.fun Sniper is Running!", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -16,45 +16,47 @@ def run_flask():
 
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
-def fetch_raydium_market(seen_mints):
-    # Zanesljiv javni vir za sveže Solana unose z vsemi podatki
-    url = "https://api.dexscreener.com/latest/dex/tokens/solana"
+def fetch_pumpfun_tokens(seen_mints):
+    # Uporabimo uradni Pump.fun endpoint za najnovejše ustvarjene kovance
+    url = "https://frontend-api.pump.fun/coins?offset=0&limit=10&sort=created_timestamp&order=DESC"
     
-    print("Fetching active tokens with full details...", flush=True)
+    print("Fetching directly from Pump.fun...", flush=True)
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, timeout=10)
         
         if resp.status_code == 200:
-            data = resp.json()
-            pairs = data.get("pairs", [])
+            coins = resp.json()
+            if not isinstance(coins, list):
+                return
             
-            for pair in pairs:
-                base_token = pair.get("baseToken", {})
-                mint = base_token.get("address")
-                name = base_token.get("name")
+            for coin in coins:
+                mint = coin.get("mint")
+                name = coin.get("name")
+                symbol = coin.get("symbol", "")
                 
                 if not mint or not name or mint in seen_mints:
                     continue
                 
                 seen_mints.add(mint)
                 
-                market_cap = pair.get("marketCap")
+                # Izračunamo ali poberemo tržno kapitalizacijo (USD market cap)
+                market_cap = coin.get("usd_market_cap", 15000)
                 if not market_cap:
-                    market_cap = pair.get("fdv", 50000)
+                    market_cap = 15000
                 
                 payload = {
-                    "tokenName": name,
+                    "tokenName": f"{name} ({symbol})",
                     "marketCap": market_cap,
                     "mint": mint,
-                    "twitterUrl": f"https://twitter.com/search?q={mint}",
-                    "pair_url": pair.get("url", f"https://dexscreener.com/solana/{mint}")
+                    "twitterUrl": coin.get("twitter") or f"https://twitter.com/search?q={mint}",
+                    "pair_url": f"https://pump.fun/coin/{mint}"
                 }
                 
                 if N8N_WEBHOOK_URL:
                     try:
                         requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
-                        print(f"SUCCESSFULLY SENT FULL DATA TO N8N: {name}", flush=True)
+                        print(f"SUCCESSFULLY SENT PUMPFUN TOKEN: {name}", flush=True)
                     except Exception as err:
                         print(f"Webhook error: {err}", flush=True)
                 
@@ -63,11 +65,11 @@ def fetch_raydium_market(seen_mints):
         print(f"Error: {e}", flush=True)
 
 def main():
-    print("Sniper Active - Full Data Stream...", flush=True)
+    print("Pump.fun Sniper Active...", flush=True)
     seen_mints = set()
     while True:
-        fetch_raydium_market(seen_mints)
-        time.sleep(30)
+        fetch_pumpfun_tokens(seen_mints)
+        time.sleep(15)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
