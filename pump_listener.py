@@ -17,7 +17,7 @@ def run_flask():
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
 def fetch_pumpfun_range(seen_mints):
-    # Uradni Pump.fun endpoint za nove in aktivne kovance
+    # Uradni Pump.fun API endpoint za najnovejše unose
     url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=created_timestamp&order=DESC"
     
     print("Scanning Pump.fun for unmigrated tokens (15k - 30k MC)...", flush=True)
@@ -34,9 +34,8 @@ def fetch_pumpfun_range(seen_mints):
                 if not isinstance(coin, dict):
                     continue
                 
-                # Preverimo, če je kovanec že migriral (če ima polje complete ali raydium pool, ga preskočimo)
-                complete = coin.get("complete", False)
-                if complete:
+                # Izpustimo tiste, ki so že migrirali
+                if coin.get("complete", False):
                     continue
                 
                 mint = coin.get("mint")
@@ -46,12 +45,11 @@ def fetch_pumpfun_range(seen_mints):
                 if not mint or not name or mint in seen_mints:
                     continue
                 
-                # Tržna kapitalizacija v USD
                 market_cap = coin.get("usd_market_cap", 0)
                 if not market_cap:
                     continue
                 
-                # Filter: točno med 15.000 in 30.000 USD
+                # Filter: točno med 15.000 in 30.000 USD market capa
                 if not (15000 <= market_cap <= 30000):
                     continue
                 
