@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Raydium Sniper is Running!", 200
+    return "Pump.fun Sniper is Running!", 200
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -16,61 +16,59 @@ def run_flask():
 
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
 
-def fetch_raydium_migrated_tokens(seen_mints):
-    # Uporabimo javni vir, ki nam vrne pare in njihovo kapitalizacijo
-    url = "https://api.dexscreener.com/latest/dex/tokens/solana"
+def fetch_pumpfun_range(seen_mints):
+    # Uradni Pump.fun endpoint za nove in aktivne kovance
+    url = "https://frontend-api.pump.fun/coins?offset=0&limit=50&sort=created_timestamp&order=DESC"
     
-    print("Scanning Raydium migrated tokens (30k - 100k MC)...", flush=True)
+    print("Scanning Pump.fun for unmigrated tokens (15k - 30k MC)...", flush=True)
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, timeout=10)
         
         if resp.status_code == 200:
-            data = resp.json()
-            if not isinstance(data, dict):
+            coins = resp.json()
+            if not isinstance(coins, list):
                 return
             
-            pairs = data.get("pairs")
-            if not pairs or not isinstance(pairs, list):
-                return
-            
-            for pair in pairs:
-                if not isinstance(pair, dict):
+            for coin in coins:
+                if not isinstance(coin, dict):
                     continue
                 
-                # Gledamo izključno Raydium pare
-                dex_id = pair.get("dexId", "")
-                if dex_id not in ["raydium", "raydium_clamm"]:
+                # Preverimo, če je kovanec že migriral (če ima polje complete ali raydium pool, ga preskočimo)
+                complete = coin.get("complete", False)
+                if complete:
                     continue
                 
-                base_token = pair.get("baseToken", {})
-                mint = base_token.get("address")
-                name = base_token.get("name")
+                mint = coin.get("mint")
+                name = coin.get("name")
+                symbol = coin.get("symbol", "")
                 
                 if not mint or not name or mint in seen_mints:
                     continue
                 
-                # Preverimo tržno kapitalizacijo (market cap ali fdv)
-                market_cap = pair.get("marketCap") or pair.get("fdv", 0)
+                # Tržna kapitalizacija v USD
+                market_cap = coin.get("usd_market_cap", 0)
+                if not market_cap:
+                    continue
                 
-                # Filter: točno med 30.000 in 100.000 USD
-                if not (30000 <= market_cap <= 100000):
+                # Filter: točno med 15.000 in 30.000 USD
+                if not (15000 <= market_cap <= 30000):
                     continue
                 
                 seen_mints.add(mint)
                 
                 payload = {
-                    "tokenName": name,
+                    "tokenName": f"{name} ({symbol})",
                     "marketCap": market_cap,
                     "mint": mint,
-                    "twitterUrl": f"https://twitter.com/search?q={mint}",
-                    "pair_url": pair.get("url", f"https://dexscreener.com/solana/{mint}")
+                    "twitterUrl": coin.get("twitter") or f"https://twitter.com/search?q={mint}",
+                    "pair_url": f"https://pump.fun/coin/{mint}"
                 }
                 
                 if N8N_WEBHOOK_URL:
                     try:
                         requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
-                        print(f"SUCCESSFULLY SENT MIGRATED TOKEN: {name} ({market_cap} MC)", flush=True)
+                        print(f"SUCCESSFULLY SENT PUMPFUN TOKEN: {name} ({market_cap} MC)", flush=True)
                     except Exception as err:
                         print(f"Webhook error: {err}", flush=True)
                 
@@ -79,11 +77,11 @@ def fetch_raydium_migrated_tokens(seen_mints):
         print(f"Error: {e}", flush=True)
 
 def main():
-    print("Raydium Range Sniper Active...", flush=True)
+    print("Pump.fun Range Sniper Active...", flush=True)
     seen_mints = set()
     while True:
-        fetch_raydium_migrated_tokens(seen_mints)
-        time.sleep(20)
+        fetch_pumpfun_range(seen_mints)
+        time.sleep(15)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
