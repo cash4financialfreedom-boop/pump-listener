@@ -15,24 +15,23 @@ def run_flask():
     app.run(host="0.0.0.0", port=port)
 
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
-BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 def fetch_raydium_market(seen_mints):
-    # Uporabimo pravilen in preverjen Birdeye endpoint za nove unose
-    url = "https://public-api.birdeye.so/defi/v2/tokens/new_listing"
-    headers = {"X-API-KEY": BIRDEYE_API_KEY, "accept": "application/json", "x-chain": "solana"}
+    # Uporabimo zanesljiv in brezplačen endpoint, ki ne zahteva ključev in ne beleži "compute units"
+    url = "https://api.dexscreener.com/latest/dex/tokens/solana"
     
-    print("Scanning Birdeye new listings...", flush=True)
+    print("Scanning market securely...", flush=True)
     try:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         resp = requests.get(url, headers=headers, timeout=10)
         
         if resp.status_code == 200:
             data = resp.json()
-            items = data.get("data", {}).get("items", [])
+            pairs = data.get("pairs", [])
             
-            for item in items:
-                mint = item.get("address")
-                name = item.get("name", "Unknown")
+            for pair in pairs:
+                mint = pair.get("baseToken", {}).get("address")
+                name = pair.get("baseToken", {}).get("name", "Unknown")
                 
                 if not mint or mint in seen_mints:
                     continue
@@ -40,10 +39,10 @@ def fetch_raydium_market(seen_mints):
                 seen_mints.add(mint)
                 payload = {
                     "tokenName": name,
-                    "marketCap": item.get("marketCap", 50000) or 50000,
+                    "marketCap": pair.get("marketCap", 50000) or 50000,
                     "mint": mint,
                     "twitterUrl": f"https://twitter.com/search?q={mint}",
-                    "pair_url": f"https://birdeye.so/token/{mint}?chain=solana"
+                    "pair_url": pair.get("url", f"https://dexscreener.com/solana/{mint}")
                 }
                 
                 if N8N_WEBHOOK_URL:
@@ -54,21 +53,17 @@ def fetch_raydium_market(seen_mints):
                         print(f"Webhook error: {err}", flush=True)
                 
                 break
-                
-        elif resp.status_code == 429:
-            print("Rate limit 429, resting...", flush=True)
-            time.sleep(30)
         else:
-            print(f"Birdeye API status code: {resp.status_code}, response: {resp.text}", flush=True)
+            print(f"API status code: {resp.status_code}", flush=True)
     except Exception as e:
         print(f"Error: {e}", flush=True)
 
 def main():
-    print("Sniper Active via Birdeye...", flush=True)
+    print("Sniper Active - Direct Connection...", flush=True)
     seen_mints = set()
     while True:
         fetch_raydium_market(seen_mints)
-        time.sleep(15)
+        time.sleep(20)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
