@@ -17,17 +17,17 @@ AI_API_KEY = os.environ.get("AI_API_KEY", "")
 TRENDS_DATABASE = [
     {
         "id": 1,
-        "trend": "Early Viral Trend Radar Active",
-        "suggested_name": "EarlyPulse",
-        "symbol": "EARLY",
-        "description": "Scanning fresh TikTok, Instagram, and breaking lighthearted global news with strong early traction.",
-        "source_url": "https://www.tiktok.com/search?q=viral+trending"
+        "trend": "Pesto the Baby King Penguin",
+        "suggested_name": "Pesto",
+        "symbol": "PESTO",
+        "description": "The massive baby king penguin dominating TikTok feeds and viral pet culture with huge early traction.",
+        "source_url": "https://www.tiktok.com/search?q=Pesto%20penguin"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab Clean Omni-Radar is Running"
+    return "MemeCollab Precise Trend Radar is Running"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -48,10 +48,10 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": f"Today is {current_date}. You are an elite meme coin and trend hunter. Look for brand new, rising viral internet memes, TikTok/Instagram animal clips starting to trend, or lighthearted breaking global news (like Trump, Elon Musk funny or viral moments) from the last 24 hours. SAFETY RULE: NEVER select earthquakes, disasters, accidents, deaths, tragedies, wars, or heavy suffering. ONLY focus on fun, viral, early-stage traction content. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description. No markdown formatting, no backticks."
+                "content": f"Today is {current_date}. You are an elite meme coin alpha hunter. STRICT RULE: You must pick ONE specific, named viral animal, individual meme character, or trending lighthearted topic from TikTok, Instagram, or global news that is gaining traction. NEVER write generic titles like 'viral trending' or 'animal content'. Give it a precise name, symbol, and short degen description. SAFETY: No tragedies, wars, or disasters. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description. No markdown formatting, no backticks."
             },
             {
-                "user": "Find one fresh, early-rising viral TikTok, Instagram, or lighthearted global news trend starting to gain traction and turn it into a meme coin concept."
+                "user": "Find one specific viral animal, meme, or lighthearted trend starting to explode on TikTok/Instagram and turn it into a meme coin concept."
             }
         ]
     }
@@ -71,13 +71,13 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Scanning for fresh early-stage viral trends & news...")
+        print("Scanning for precise individual viral trends...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
             clean_trend_title = clean_text(new_data.get("trend"))
             
-            if "content" in clean_trend_title.lower() or len(clean_trend_title.split()) > 15:
+            if len(clean_trend_title.split()) > 15 or "viral" in clean_trend_title.lower() and len(clean_trend_title.split()) < 3:
                 time.sleep(10)
                 continue
 
@@ -86,6 +86,7 @@ def auto_news_scanner():
             if any(word in lower_title for word in forbidden_words):
                 continue
             
+            # Pravilno kodiranje URL-ja, da TikTok iskanje takoj deluje
             search_query = urllib.parse.quote(clean_trend_title)
             safe_source_url = f"https://www.tiktok.com/search?q={search_query}"
 
@@ -100,7 +101,7 @@ def auto_news_scanner():
             
             if not any(t['trend'].lower() == new_item['trend'].lower() for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added clean early trend: {new_item['trend']}")
+                print(f"Successfully added precise trend: {new_item['trend']}")
 
         time.sleep(60)
 
