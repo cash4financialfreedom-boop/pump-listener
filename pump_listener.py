@@ -2,8 +2,6 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 import os
 import requests
-import threading
-import time
 import json
 import urllib.parse
 import re
@@ -14,6 +12,9 @@ CORS(app)
 
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
 DB_FILE = "trends_database.json"
+
+# Časovni žig zadnjega skeniranja, da preprečimo prehitre klice
+LAST_SCAN_TIME = 0
 
 def load_database():
     if os.path.exists(DB_FILE):
@@ -42,7 +43,7 @@ def save_database(db):
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab Persistent Radar is Running"
+    return "MemeCollab Direct-Sync Radar is Running"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -90,59 +91,48 @@ def fetch_real_trend_from_perplexity():
     
     return None
 
-def run_scanner_job():
-    print("--- Running scheduled viral trend scan ---")
-    new_data = fetch_real_trend_from_perplexity()
+def check_and_add_new_trend():
+    global LAST_SCAN_TIME
+    current_time = time.time()
     
-    if new_data and "trend" in new_data:
-        clean_trend_title = clean_text(new_data.get("trend"))
+    # Preveri vsake 2 minuti (120 sekund), ali je čas za nov trend
+    if current_time - LAST_SCAN_TIME > 120:
+        LAST_SCAN_TIME = current_time
+        print("--- Triggering live trend scan ---")
+        new_data = fetch_real_trend_from_perplexity()
         
-        if len(clean_trend_title.split()) > 15:
-            print("Skipped: Trend title too long.")
-        else:
-            lower_title = clean_trend_title.lower()
-            forbidden_words = ["earthquake", "potres", "death", "kill", "tragedy", "disaster", "accident", "war", "crash"]
+        if new_data and "trend" in new_data:
+            clean_trend_title = clean_text(new_data.get("trend"))
             
-            if any(word in lower_title for word in forbidden_words):
-                print(f"Skipped unsafe trend: {clean_trend_title}")
-            else:
-                search_query = urllib.parse.quote(clean_trend_title)
-                safe_source_url = f"https://www.tiktok.com/search?q={search_query}"
-
-                db = load_database()
-                new_item = {
-                    "id": len(db) + 1,
-                    "trend": clean_trend_title,
-                    "suggested_name": clean_text(new_data.get("suggested_name")),
-                    "symbol": clean_text(new_data.get("symbol")),
-                    "description": clean_text(new_data.get("description")),
-                    "source_url": safe_source_url
-                }
+            if len(clean_trend_title.split()) <= 15:
+                lower_title = clean_trend_title.lower()
+                forbidden_words = ["earthquake", "potres", "death", "kill", "tragedy", "disaster", "accident", "war", "crash"]
                 
-                if not any(t['trend'].lower() == new_item['trend'].lower() for t in db):
-                    db.append(new_item)
-                    save_database(db)
-                    print(f"ADDED NEW TREND TO DATABASE: {new_item['trend']}")
-                else:
-                    print("Trend already exists in database, skipping duplicate.")
-    else:
-        print("No valid data received from scanner this cycle.")
+                if not any(word in lower_title for word in forbidden_words):
+                    search_query = urllib.parse.quote(clean_trend_title)
+                    safe_source_url = f"https://www.tiktok.com/search?q={search_query}"
 
-def auto_news_scanner():
-    print("Background scanner thread started.")
-    time.sleep(10)
-    run_scanner_job()
-    
-    while True:
-        time.sleep(120)
-        run_scanner_job()
+                    db = load_database()
+                    new_item = {
+                        "id": len(db) + 1,
+                        "trend": clean_trend_title,
+                        "suggested_name": clean_text(new_data.get("suggested_name")),
+                        "symbol": clean_text(new_data.get("symbol")),
+                        "description": clean_text(new_data.get("description")),
+                        "source_url": safe_source_url
+                    }
+                    
+                    if not any(t['trend'].lower() == new_item['trend'].lower() for t in db):
+                        db.append(new_item)
+                        save_database(db)
+                        print(f"ADDED NEW TREND TO DATABASE: {new_item['trend']}")
 
 @app.route("/api/trends", methods=["GET"])
 def get_trends():
+    # Ob vsakem osveževanju strani preverimo, če je čas za nov trend
+    check_and_add_new_trend()
     db = load_database()
     return jsonify({"success": True, "trends": list(reversed(db))}), 200
 
 if __name__ == "__main__":
-    scanner_thread = threading.Thread(target=auto_news_scanner, daemon=True)
-    scanner_thread.start()
     app.run(host="0.0.0.0", port=10000)
