@@ -21,7 +21,6 @@ TRENDS = [
 ]
 
 def clean_search_term(text):
-    # Odstrani markdown zvezdice, narekovaje in posebne znake, da TikTok link deluje brez napak
     cleaned = re.sub(r'[\*\#_`"“”]', '', text)
     return cleaned.strip()
 
@@ -40,11 +39,17 @@ def get_trends():
                 "messages": [
                     {
                         "role": "system", 
-                        "content": "You are an elite meme coin alpha hunter. Find a specific, hyper-viral animal or meme trend from TikTok/Instagram over the last 24h. Return ONLY raw JSON with keys: 'trend' (short, clean title like 'Baby Capybara Spa'), 'suggested_name' (clean token name), 'symbol' (uppercase ticker max 6 chars, NO emojis or symbols), 'description' (short degen hype text). No markdown formatting."
+                        "content": (
+                            "You are an elite meme coin alpha hunter for Pump.fun. "
+                            "Find ONE high-impact viral trend from the last 24h focusing strictly on EITHER:\n"
+                            "1. A single, specific viral animal (e.g., a named pet, a unique rescue animal, or a solo animal doing something iconic on TikTok/Instagram - NEVER groups of animals or generic species).\n"
+                            "2. A major, highly discussed statement or viral moment involving Donald Trump or Elon Musk that leaves a strong public impression and is widely covered across multiple media outlets.\n"
+                            "Return ONLY raw JSON with keys: 'trend' (short clean title), 'suggested_name' (clean token name), 'symbol' (uppercase ticker max 6 chars, NO emojis or special symbols), 'description' (short degen hype text). No markdown formatting."
+                        )
                     },
                     {
                         "role": "user", 
-                        "content": f"Find ONE unique viral trend. Do not repeat these: {existing_trends}."
+                        "content": f"Find ONE unique trend following the strict rules. Do not repeat these: {existing_trends}."
                     }
                 ]
             }
@@ -58,21 +63,18 @@ def get_trends():
                 raw_trend = data.get("trend", "Viral Trend")
                 cleaned_trend = clean_search_term(raw_trend)
                 
-                # Prepreči podvajanje in zagotovi čiste podatke
                 if not any(t["trend"].lower() == cleaned_trend.lower() for t in TRENDS):
                     data["trend"] = cleaned_trend
-                    # Očisti simbol, da nima emojijev ali presledkov (nujno za pump.fun)
                     data["symbol"] = re.sub(r'[^A-Z]', '', data.get("symbol", "MEME").upper())[:6]
                     data["suggested_name"] = clean_search_term(data.get("suggested_name", "Meme"))
                     data["description"] = clean_search_term(data.get("description", ""))
                     
-                    # Ustvari čist TikTok iskalni link brez zvezdic in napak
                     query_string = urllib.parse.quote(cleaned_trend)
                     data["source_url"] = f"https://www.tiktok.com/search?q={query_string}"
                     
                     data["id"] = len(TRENDS) + 1
                     TRENDS.insert(0, data)
-                    print(f"SUCCESS: Added clean trend -> {cleaned_trend}")
+                    print(f"SUCCESS: Added targeted trend -> {cleaned_trend}")
         except Exception as e:
             print(f"Error during generation: {e}")
             
@@ -80,7 +82,7 @@ def get_trends():
 
 @app.route("/")
 def home():
-    return "Pump.fun Radar is active."
+    return "Pump.fun Targeted Radar is active."
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
