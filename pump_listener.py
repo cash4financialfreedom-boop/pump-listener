@@ -27,10 +27,9 @@ TRENDS_DATABASE = [
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab & Viral Vault Backend is Running Clean"
+    return "MemeCollab & Viral Vault Backend is Running with Direct Links"
 
 def clean_text(text):
-    # Odstrani oklepaje s številkami virov, npr. [7][8]
     return re.sub(r'\[\d+\]', '', text).strip()
 
 def fetch_real_trend_from_perplexity():
@@ -48,11 +47,11 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": "You are a crypto trend hunter. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short, clean news headline (max 8 words). Do not include citation brackets like [1]. No markdown formatting, no backticks."
+                "content": "You are a crypto trend hunter. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short clean headline. 'source_url' MUST be the direct URL to the specific news article, never just a homepage like abcnews.com. No markdown formatting, no backticks."
             },
             {
                 "role": "user",
-                "content": "Find one major breaking viral news event right now and turn it into a meme coin concept with a short headline for 'trend', name, 3-5 letter symbol, short description, news source URL, and a funny image_prompt."
+                "content": "Find one major breaking viral news event right now, get its exact article URL for source_url, and turn it into a meme coin concept with a headline, name, symbol, description, and funny image_prompt."
             }
         ]
     }
@@ -72,7 +71,7 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Polling Perplexity for fresh viral news...")
+        print("Polling Perplexity for fresh viral news with direct links...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
@@ -80,19 +79,24 @@ def auto_news_scanner():
             raw_prompt = new_data.get("image_prompt", clean_trend_title)
             encoded_prompt = urllib.parse.quote(raw_prompt + ", funny crypto meme style, vibrant colors, 4k")
             
+            # Preverimo, da je URL veljaven in specifičen
+            s_url = new_data.get("source_url", "https://news.google.com")
+            if len(s_url) < 15 or s_url.count('/') < 3:
+                s_url = "https://news.google.com"
+
             new_item = {
                 "id": len(TRENDS_DATABASE) + 1,
                 "trend": clean_trend_title,
                 "suggested_name": clean_text(new_data.get("suggested_name")),
                 "symbol": clean_text(new_data.get("symbol")),
                 "description": clean_text(new_data.get("description")),
-                "source_url": new_data.get("source_url", "https://news.google.com"),
+                "source_url": s_url,
                 "image_url": f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             }
             
             if not any(t['trend'] == new_item['trend'] for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added clean trend: {new_item['trend']}")
+                print(f"Successfully added trend with direct link: {new_item['trend']}")
 
         time.sleep(60)
 
