@@ -4,6 +4,7 @@ import os
 import requests
 import threading
 import time
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -20,6 +21,10 @@ TRENDS_DATABASE = [
         "source_url": "https://www.nasa.gov"
     }
 ]
+
+@app.route("/", methods=["GET"])
+def home():
+    return "MemeCollab & Viral Vault Backend is Running with AI"
 
 def fetch_real_trend_from_perplexity():
     if not AI_API_KEY:
@@ -50,9 +55,7 @@ def fetch_real_trend_from_perplexity():
         if response.status_code == 200:
             result = response.json()
             content = result["choices"][0]["message"]["content"]
-            # Clean up potential markdown formatting if returned
             content = content.replace("```json", "").replace("```", "").strip()
-            import json
             parsed = json.loads(content)
             return parsed
     except Exception as e:
@@ -61,7 +64,6 @@ def fetch_real_trend_from_perplexity():
     return None
 
 def auto_news_scanner():
-    """Ozadje teče in vsakih 60 sekund preko Perplexityja potegne novo novico."""
     while True:
         print("Polling Perplexity for fresh viral news...")
         new_data = fetch_real_trend_from_perplexity()
@@ -76,7 +78,6 @@ def auto_news_scanner():
                 "source_url": new_data.get("source_url", "https://news.google.com")
             }
             
-            # Preverimo, da ni podvajanj
             if not any(t['trend'] == new_item['trend'] for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
                 print(f"Successfully added new AI trend: {new_item['trend']}")
