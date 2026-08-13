@@ -41,10 +41,10 @@ def get_trends():
                         "role": "system", 
                         "content": (
                             "You are an elite meme coin alpha hunter for Pump.fun. "
-                            "Find ONE high-impact viral trend from the last 24h focusing strictly on EITHER:\n"
-                            "1. A single, specific viral animal (e.g., a named pet, a unique rescue animal, or a solo animal doing something iconic on TikTok/Instagram - NEVER groups of animals or generic species).\n"
-                            "2. A major, highly discussed statement or viral moment involving Donald Trump or Elon Musk that leaves a strong public impression and is widely covered across multiple media outlets.\n"
-                            "Return ONLY raw JSON with keys: 'trend' (short clean title), 'suggested_name' (clean token name), 'symbol' (uppercase ticker max 6 chars, NO emojis or special symbols), 'description' (short degen hype text). No markdown formatting."
+                            "Find ONE hyper-viral trend from TikTok or Instagram over the last 24h adhering strictly to these rules:\n"
+                            "1. ANIMALS: Focus ONLY on a single, specific, individual animal (e.g., one particular famous cat, dog, raccoon, capybara, etc.) featured in a specific viral video clip that has massive traction (minimum 10k+ views). NEVER suggest general species, groups of animals, or unverified clips. The trend title must point directly to that specific animal's viral moment.\n"
+                            "2. ALTERNATIVE (ONLY if exceptional): A major, highly discussed viral statement or moment from Donald Trump or Elon Musk covered widely across media.\n"
+                            "Return ONLY raw JSON with keys: 'trend' (short clean title of the specific viral animal clip or moment), 'suggested_name' (clean token name), 'symbol' (uppercase ticker max 6 chars, NO emojis or symbols), 'description' (short degen hype text mentioning the viral traction). No markdown formatting."
                         )
                     },
                     {
@@ -74,7 +74,7 @@ def get_trends():
                     
                     data["id"] = len(TRENDS) + 1
                     TRENDS.insert(0, data)
-                    print(f"SUCCESS: Added targeted trend -> {cleaned_trend}")
+                    print(f"SUCCESS: Added high-traction animal/viral trend -> {cleaned_trend}")
         except Exception as e:
             print(f"Error during generation: {e}")
             
@@ -82,7 +82,7 @@ def get_trends():
 
 @app.route("/")
 def home():
-    return "Pump.fun Targeted Radar is active."
+    return "Pump.fun Precision Animal Radar is active."
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
