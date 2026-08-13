@@ -13,21 +13,36 @@ app = Flask(__name__)
 CORS(app)
 
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
+DB_FILE = "trends_database.json"
 
-TRENDS_DATABASE = [
-    {
-        "id": 1,
-        "trend": "Pesto the Baby King Penguin",
-        "suggested_name": "Pesto",
-        "symbol": "PESTO",
-        "description": "The massive baby king penguin dominating TikTok feeds and viral pet culture with huge early traction.",
-        "source_url": "https://www.tiktok.com/search?q=Pesto%20penguin"
-    }
-]
+def load_database():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return [
+        {
+            "id": 1,
+            "trend": "Pesto the Baby King Penguin",
+            "suggested_name": "Pesto",
+            "symbol": "PESTO",
+            "description": "The massive baby king penguin dominating TikTok feeds and viral pet culture with huge early traction.",
+            "source_url": "https://www.tiktok.com/search?q=Pesto%20penguin"
+        }
+    ]
+
+def save_database(db):
+    try:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(db, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Error saving database: {e}")
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab Instant Radar is Running"
+    return "MemeCollab Persistent Radar is Running"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -94,8 +109,9 @@ def run_scanner_job():
                 search_query = urllib.parse.quote(clean_trend_title)
                 safe_source_url = f"https://www.tiktok.com/search?q={search_query}"
 
+                db = load_database()
                 new_item = {
-                    "id": len(TRENDS_DATABASE) + 1,
+                    "id": len(db) + 1,
                     "trend": clean_trend_title,
                     "suggested_name": clean_text(new_data.get("suggested_name")),
                     "symbol": clean_text(new_data.get("symbol")),
@@ -103,8 +119,9 @@ def run_scanner_job():
                     "source_url": safe_source_url
                 }
                 
-                if not any(t['trend'].lower() == new_item['trend'].lower() for t in TRENDS_DATABASE):
-                    TRENDS_DATABASE.append(new_item)
+                if not any(t['trend'].lower() == new_item['trend'].lower() for t in db):
+                    db.append(new_item)
+                    save_database(db)
                     print(f"ADDED NEW TREND TO DATABASE: {new_item['trend']}")
                 else:
                     print("Trend already exists in database, skipping duplicate.")
@@ -122,7 +139,8 @@ def auto_news_scanner():
 
 @app.route("/api/trends", methods=["GET"])
 def get_trends():
-    return jsonify({"success": True, "trends": list(reversed(TRENDS_DATABASE))}), 200
+    db = load_database()
+    return jsonify({"success": True, "trends": list(reversed(db))}), 200
 
 if __name__ == "__main__":
     scanner_thread = threading.Thread(target=auto_news_scanner, daemon=True)
