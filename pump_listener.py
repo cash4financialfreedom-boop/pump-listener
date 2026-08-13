@@ -17,18 +17,18 @@ AI_API_KEY = os.environ.get("AI_API_KEY", "")
 TRENDS_DATABASE = [
     {
         "id": 1,
-        "trend": "Safe & Fun Viral Radar",
-        "suggested_name": "PureMeme",
-        "symbol": "MEME",
-        "description": "Strictly filtered for fun internet culture, viral animals, TikTok trends, and lighthearted celebrity moments.",
-        "source_url": "https://tiktok.com",
-        "image_url": "https://image.pollinations.ai/prompt/cute%20funny%20viral%20animal%20meme,%20vibrant%20colors,4k"
+        "trend": "TikTok Viral Animal Radar",
+        "suggested_name": "ViralPaws",
+        "symbol": "PAWS",
+        "description": "Scanning top viral animal moments and internet memes with guaranteed working search links.",
+        "source_url": "https://www.google.com/search?q=funny+tiktok+animals+viral",
+        "image_url": "https://image.pollinations.ai/prompt/funny%20viral%20cat%20tiktok%20meme,%20vibrant%20colors,4k"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab Safe Viral Radar is Running"
+    return "MemeCollab Radar with Verified Search Links is Running"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -49,11 +49,10 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": f"Today is {current_date}. You are an elite meme coin trend hunter. STRICT SAFETY RULE: NEVER select earthquakes, disasters, accidents, deaths, tragedies, wars, or heavy suffering. Those are strictly banned. ONLY select fun, lighthearted viral internet culture, TikTok/Instagram viral animal moments, funny internet trends, or amusing pop-culture/celebrity news (like Trump, Elon Musk funny quotes or actions) from the last 24 hours. CRITICAL: Provide the exact direct article or post link in 'source_url'. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. No markdown formatting, no backticks."
+                "content": f"Today is {current_date}. You are an elite meme trend hunter. STRICT SAFETY: No disasters, tragedies, wars, or accidents. ONLY focus on fun, lighthearted viral internet culture, TikTok/Instagram viral animal moments, funny memes, or amusing celebrity moments from the last 24 hours. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, image_prompt. Do not include source_url in JSON. No markdown formatting, no backticks."
             },
             {
-                "role": "user",
-                "content": "Find one fun, lighthearted viral internet trend, TikTok animal hit, or humorous celebrity moment from the last 24 hours, get its exact direct source URL, and turn it into a top-tier degen meme coin concept."
+                "user": "Find one top viral TikTok animal, meme, or fun trend from the last 24 hours and turn it into a degen meme coin concept."
             }
         ]
     }
@@ -73,25 +72,23 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Scanning strictly for fun viral trends and funny memes...")
+        print("Scanning for fresh viral animal & meme trends...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
             clean_trend_title = clean_text(new_data.get("trend"))
             
-            # Dodatna varnostna preverjanja v Pythonu (da preprečimo potrese ali nesreče)
+            # Filter proti neprimernim vsebinam
             lower_title = clean_trend_title.lower()
-            forbidden_words = ["earthquake", "potres", "death", "kill", "tragedy", "disaster", "accident", "war", "crash", "strmoglavljenje"]
+            forbidden_words = ["earthquake", "potres", "death", "kill", "tragedy", "disaster", "accident", "war", "crash"]
             if any(word in lower_title for word in forbidden_words):
-                print(f"Skipped inappropriate content: {clean_trend_title}")
                 continue
 
             raw_prompt = new_data.get("image_prompt", clean_trend_title)
             encoded_prompt = urllib.parse.quote(raw_prompt + ", funny high-impact crypto meme style, vibrant colors, 4k")
             
-            s_url = new_data.get("source_url", "https://tiktok.com")
-            if len(s_url) < 20 or s_url.count('/') < 3 or s_url.endswith('.com'):
-                s_url = f"https://www.google.com/search?q={urllib.parse.quote(clean_trend_title)}"
+            # Namesto ugibanja URL-ja ustvarimo direktno pametno iskalno povezavo, ki vedno deluje in točno ustreza novici!
+            verified_search_url = f"https://www.google.com/search?q={urllib.parse.quote(clean_trend_title + ' viral tiktok meme')}"
 
             new_item = {
                 "id": len(TRENDS_DATABASE) + 1,
@@ -99,13 +96,13 @@ def auto_news_scanner():
                 "suggested_name": clean_text(new_data.get("suggested_name")),
                 "symbol": clean_text(new_data.get("symbol")),
                 "description": clean_text(new_data.get("description")),
-                "source_url": s_url,
+                "source_url": verified_search_url,
                 "image_url": f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             }
             
             if not any(t['trend'].lower() == new_item['trend'].lower() for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added safe fun trend: {new_item['trend']}")
+                print(f"Successfully added trend with working search link: {new_item['trend']}")
 
         time.sleep(60)
 
