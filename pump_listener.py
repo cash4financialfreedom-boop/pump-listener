@@ -5,6 +5,7 @@ import requests
 import threading
 import time
 import json
+import urllib.parse
 
 app = Flask(__name__)
 CORS(app)
@@ -19,13 +20,13 @@ TRENDS_DATABASE = [
         "symbol": "MRD",
         "description": "The latest breakthrough in interplanetary exploration and canine space travel.",
         "source_url": "https://www.nasa.gov",
-        "image_url": "https://picsum.photos/seed/mars/400/200"
+        "image_url": "https://image.pollinations.ai/prompt/cute%20dog%20astronaut%20on%20mars,%20crypto%20meme%20style,vibrant"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab & Viral Vault Backend is Running with Images"
+    return "MemeCollab & Viral Vault Backend is Running with Custom AI Images"
 
 def fetch_real_trend_from_perplexity():
     if not AI_API_KEY:
@@ -42,11 +43,11 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": "You are a crypto trend hunter. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url. No markdown formatting, no backticks."
+                "content": "You are a crypto trend hunter and meme creator. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. image_prompt should be a short visual description for a funny crypto meme image based on the news. No markdown formatting, no backticks."
             },
             {
                 "role": "user",
-                "content": "Find one major breaking viral news event right now and turn it into a meme coin concept with name, 3-5 letter symbol, short description, and the news source URL."
+                "content": "Find one major breaking viral news event right now and turn it into a meme coin concept with name, 3-5 letter symbol, short description, news source URL, and a funny image_prompt."
             }
         ]
     }
@@ -66,11 +67,14 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Polling Perplexity for fresh viral news...")
+        print("Polling Perplexity for fresh viral news and meme visuals...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
-            keyword = new_data.get("symbol", "meme").lower()
+            # Iz opisa / prompta ustvarimo dinamično sliko
+            raw_prompt = new_data.get("image_prompt", new_data.get("trend", "crypto meme"))
+            encoded_prompt = urllib.parse.quote(raw_prompt + ", funny crypto meme style, vibrant colors, 4k")
+            
             new_item = {
                 "id": len(TRENDS_DATABASE) + 1,
                 "trend": new_data.get("trend"),
@@ -78,12 +82,12 @@ def auto_news_scanner():
                 "symbol": new_data.get("symbol"),
                 "description": new_data.get("description"),
                 "source_url": new_data.get("source_url", "https://news.google.com"),
-                "image_url": f"https://picsum.photos/seed/{keyword}/400/200"
+                "image_url": f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             }
             
             if not any(t['trend'] == new_item['trend'] for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added new AI trend with image: {new_item['trend']}")
+                print(f"Successfully added new AI trend with custom meme image: {new_item['trend']}")
 
         time.sleep(60)
 
