@@ -16,11 +16,9 @@ def create_token():
         token_symbol = data.get("symbol")
         wallet_address = data.get("wallet")
 
-        # Basic validation
         if not token_name or not token_symbol or not wallet_address:
             return jsonify({"error": "Missing required fields"}), 400
 
-        # Here we will add AI generation and trend logic next
         print(f"Received token creation request: {token_name} ({token_symbol}) for wallet {wallet_address}")
 
         return jsonify({
@@ -30,6 +28,27 @@ def create_token():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/api/trends", methods=["GET"])
+def get_trends():
+    # Simulated live viral trends feed for the app dashboard
+    mock_trends = [
+        {
+            "id": 1,
+            "trend": "Mars Colonization Update",
+            "suggested_name": "Mars Rover Dog",
+            "symbol": "MRD",
+            "description": "The latest breakthrough in interplanetary exploration and canine space travel."
+        },
+        {
+            "id": 2,
+            "trend": "Global Coffee Shortage",
+            "suggested_name": "Caffeine Panic",
+            "symbol": "BREW",
+            "description": "When the world runs out of coffee, this token powers the awake community."
+        }
+    ]
+    return jsonify({"success": True, "trends": mock_trends}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
