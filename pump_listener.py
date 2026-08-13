@@ -1,8 +1,11 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import os
 
 app = Flask(__name__)
 CORS(app)
+
+AI_API_KEY = os.environ.get("AI_API_KEY", "default_test_key")
 
 @app.route("/", methods=["GET"])
 def home():
@@ -42,10 +45,10 @@ def get_trends():
         },
         {
             "id": 2,
-            "trend": "Global Coffee Shortage",
-            "suggested_name": "Caffeine Panic",
-            "symbol": "BREW",
-            "description": "When the world runs out of coffee, this token powers the awake community.",
+            "trend": "Global Eclipse Phenomenon",
+            "suggested_name": "Solar Darkness",
+            "symbol": "ECLIPSE",
+            "description": "Spectators watch in wonder as a rare total solar eclipse plunges regions into total darkness.",
             "source_url": "https://www.reuters.com"
         }
     ]
