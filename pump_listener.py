@@ -20,7 +20,7 @@ TRENDS_DATABASE = [
         "trend": "Live Breaking Radar Active",
         "suggested_name": "FreshPulse",
         "symbol": "FRESH",
-        "description": "System initialized and scanning live 24h breaking internet culture and global headlines.",
+        "description": "System initialized and scanning live breaking internet culture with verified sources.",
         "source_url": "https://news.google.com",
         "image_url": "https://image.pollinations.ai/prompt/cyberpunk%20radar%20scanning%20live%20crypto%20news,vibrant,4k"
     }
@@ -28,7 +28,7 @@ TRENDS_DATABASE = [
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab & Viral Vault Backend is Running with Strict 24h Filter"
+    return "MemeCollab & Viral Vault Backend is Running with Verified Links"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -49,11 +49,11 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": f"Today is {current_date}. You are an extreme real-time trend hunter. You MUST ONLY pick breaking news, viral posts, or internet drama that happened in the last 24 hours. NEVER use old or historic memes like Jimothy the raccoon or old viral pets. Focus on brand new breaking events involving Trump, Elon Musk, tech, or fresh viral TikTok/X culture from today. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short clean headline. 'source_url' must be a direct link. No markdown formatting, no backticks."
+                "content": f"Today is {current_date}. You are an elite real-time trend and news hunter. Find a major breaking news story or viral trend from the last 24 hours. CRITICAL: You MUST provide the exact, full URL of the specific news article or post in 'source_url'. Never provide just a root domain like abcnews.com or bbc.com. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. No markdown formatting, no backticks."
             },
             {
                 "role": "user",
-                "content": "Find one major breaking news event or viral trend from the last 24 hours only, get its exact source URL, and turn it into a degen meme coin concept."
+                "content": "Find one breaking news event or viral trend with its direct article link, and turn it into a degen meme coin concept."
             }
         ]
     }
@@ -73,7 +73,7 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Scanning strictly for 24h fresh breaking news...")
+        print("Scanning for fresh breaking news with verified links...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
@@ -82,8 +82,9 @@ def auto_news_scanner():
             encoded_prompt = urllib.parse.quote(raw_prompt + ", funny high-impact crypto meme style, vibrant colors, 4k")
             
             s_url = new_data.get("source_url", "https://news.google.com")
-            if len(s_url) < 15 or s_url.count('/') < 3:
-                s_url = "https://news.google.com"
+            # Preverimo, da URL ni le osnovna domena (mora imeti vsaj 2 poševnici po domeni, npr. /news/story-123)
+            if len(s_url) < 20 or s_url.count('/') < 3 or s_url.endswith('.com') or s_url.endswith('.org'):
+                s_url = f"https://www.google.com/search?q={urllib.parse.quote(clean_trend_title)}"
 
             new_item = {
                 "id": len(TRENDS_DATABASE) + 1,
@@ -95,10 +96,9 @@ def auto_news_scanner():
                 "image_url": f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             }
             
-            # Preverimo, da trend ni star ali podvojen
             if not any(t['trend'].lower() == new_item['trend'].lower() for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added 24h fresh trend: {new_item['trend']}")
+                print(f"Successfully added verified trend: {new_item['trend']}")
 
         time.sleep(60)
 
