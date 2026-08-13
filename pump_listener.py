@@ -18,13 +18,14 @@ TRENDS_DATABASE = [
         "suggested_name": "Mars Rover Dog",
         "symbol": "MRD",
         "description": "The latest breakthrough in interplanetary exploration and canine space travel.",
-        "source_url": "https://www.nasa.gov"
+        "source_url": "https://www.nasa.gov",
+        "image_url": "https://picsum.photos/seed/mars/400/200"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab & Viral Vault Backend is Running with AI"
+    return "MemeCollab & Viral Vault Backend is Running with Images"
 
 def fetch_real_trend_from_perplexity():
     if not AI_API_KEY:
@@ -69,18 +70,20 @@ def auto_news_scanner():
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
+            keyword = new_data.get("symbol", "meme").lower()
             new_item = {
                 "id": len(TRENDS_DATABASE) + 1,
                 "trend": new_data.get("trend"),
                 "suggested_name": new_data.get("suggested_name"),
                 "symbol": new_data.get("symbol"),
                 "description": new_data.get("description"),
-                "source_url": new_data.get("source_url", "https://news.google.com")
+                "source_url": new_data.get("source_url", "https://news.google.com"),
+                "image_url": f"https://picsum.photos/seed/{keyword}/400/200"
             }
             
             if not any(t['trend'] == new_item['trend'] for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added new AI trend: {new_item['trend']}")
+                print(f"Successfully added new AI trend with image: {new_item['trend']}")
 
         time.sleep(60)
 
