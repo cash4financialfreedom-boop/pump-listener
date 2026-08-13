@@ -31,21 +31,22 @@ def create_token():
 
 @app.route("/api/trends", methods=["GET"])
 def get_trends():
-    # Simulated live viral trends feed for the app dashboard
     mock_trends = [
         {
             "id": 1,
             "trend": "Mars Colonization Update",
             "suggested_name": "Mars Rover Dog",
             "symbol": "MRD",
-            "description": "The latest breakthrough in interplanetary exploration and canine space travel."
+            "description": "The latest breakthrough in interplanetary exploration and canine space travel.",
+            "source_url": "https://www.nasa.gov"
         },
         {
             "id": 2,
             "trend": "Global Coffee Shortage",
             "suggested_name": "Caffeine Panic",
             "symbol": "BREW",
-            "description": "When the world runs out of coffee, this token powers the awake community."
+            "description": "When the world runs out of coffee, this token powers the awake community.",
+            "source_url": "https://www.reuters.com"
         }
     ]
     return jsonify({"success": True, "trends": mock_trends}), 200
