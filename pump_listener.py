@@ -7,6 +7,7 @@ import time
 import json
 import urllib.parse
 import re
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -16,18 +17,18 @@ AI_API_KEY = os.environ.get("AI_API_KEY", "")
 TRENDS_DATABASE = [
     {
         "id": 1,
-        "trend": "Global Viral Megatrend",
-        "suggested_name": "MegaPump",
-        "symbol": "MEGA",
-        "description": "A top-tier meme coin capturing major viral headlines and internet hype worldwide.",
+        "trend": "Live Breaking Radar Active",
+        "suggested_name": "FreshPulse",
+        "symbol": "FRESH",
+        "description": "System initialized and scanning live 24h breaking internet culture and global headlines.",
         "source_url": "https://news.google.com",
-        "image_url": "https://image.pollinations.ai/prompt/epic%20viral%20news%20headline%20crypto%20meme,%20vibrant%20colors,4k"
+        "image_url": "https://image.pollinations.ai/prompt/cyberpunk%20radar%20scanning%20live%20crypto%20news,vibrant,4k"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab & Viral Vault Backend is Running with Global & Meme Radar"
+    return "MemeCollab & Viral Vault Backend is Running with Strict 24h Filter"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -37,6 +38,7 @@ def fetch_real_trend_from_perplexity():
         print("No AI API key found!")
         return None
 
+    current_date = datetime.now().strftime("%Y-%m-%d")
     url = "https://api.perplexity.ai/chat/completions"
     headers = {
         "Authorization": f"Bearer {AI_API_KEY}",
@@ -47,11 +49,11 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": "You are an elite crypto meme and global trend hunter. Search across major breaking world news (like Trump, Elon Musk, tech, global shifts) AND viral internet culture (TikTok, X, Reddit). Find a high-impact viral story or breaking news event that has massive meme potential. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short clean headline. 'source_url' must be a direct link to the article or post. No markdown formatting, no backticks."
+                "content": f"Today is {current_date}. You are an extreme real-time trend hunter. You MUST ONLY pick breaking news, viral posts, or internet drama that happened in the last 24 hours. NEVER use old or historic memes like Jimothy the raccoon or old viral pets. Focus on brand new breaking events involving Trump, Elon Musk, tech, or fresh viral TikTok/X culture from today. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short clean headline. 'source_url' must be a direct link. No markdown formatting, no backticks."
             },
             {
                 "role": "user",
-                "content": "Find one massive breaking world news story or viral internet trend right now, get its exact source URL, and turn it into a top-tier degen meme coin concept."
+                "content": "Find one major breaking news event or viral trend from the last 24 hours only, get its exact source URL, and turn it into a degen meme coin concept."
             }
         ]
     }
@@ -71,7 +73,7 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Scanning global news & viral internet culture...")
+        print("Scanning strictly for 24h fresh breaking news...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
@@ -93,9 +95,10 @@ def auto_news_scanner():
                 "image_url": f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             }
             
-            if not any(t['trend'] == new_item['trend'] for t in TRENDS_DATABASE):
+            # Preverimo, da trend ni star ali podvojen
+            if not any(t['trend'].lower() == new_item['trend'].lower() for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added global/viral trend: {new_item['trend']}")
+                print(f"Successfully added 24h fresh trend: {new_item['trend']}")
 
         time.sleep(60)
 
