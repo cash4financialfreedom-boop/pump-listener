@@ -14,16 +14,10 @@ CORS(app)
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
 DB_FILE = "trends_database.json"
 
-LAST_SCAN_TIME = 0
-
-def load_database():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            pass
-    return [
+# Definicija osnovne baze z vključenim časom zadnjega skeniranja
+DEFAULT_DB = {
+    "last_scan_time": 0,
+    "trends": [
         {
             "id": 1,
             "trend": "Pesto the Baby King Penguin",
@@ -33,17 +27,32 @@ def load_database():
             "source_url": "https://www.tiktok.com/search?q=Pesto%20penguin"
         }
     ]
+}
 
-def save_database(db):
+def load_database():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # Ensure the loaded data has both required keys
+                if "last_scan_time" in data and "trends" in data:
+                    return data
+        except Exception as e:
+            print(f"Error reading database file: {e}")
+    
+    # Če datoteka ne obstaja ali je okvarjena, vrni privzeto
+    return DEFAULT_DB.copy()
+
+def save_database(db_data):
     try:
         with open(DB_FILE, "w", encoding="utf-8") as f:
-            json.dump(db, f, ensure_ascii=False, indent=4)
+            json.dump(db_data, f, ensure_ascii=False, indent=4)
     except Exception as e:
         print(f"Error saving database: {e}")
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab Direct-Sync Radar is Running"
+    return "MemeCollab Robust Sync Radar is Running"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -73,37 +82,41 @@ def fetch_real_trend_from_perplexity():
     }
 
     try:
-        print("Sending request to Perplexity API...")
+        print("--- Sending request to Perplexity API ---")
         response = requests.post(url, json=payload, headers=headers, timeout=30)
-        print(f"Perplexity API response status: {response.status_code}")
         
         if response.status_code == 200:
             result = response.json()
             content = result["choices"][0]["message"]["content"]
             content = content.replace("```json", "").replace("```", "").strip()
             parsed = json.loads(content)
-            print(f"Successfully parsed trend: {parsed.get('trend')}")
+            print(f"Successfully fetched trend: {parsed.get('trend')}")
             return parsed
         else:
-            print(f"API Error Content: {response.text}")
+            print(f"API Error Status {response.status_code}: {response.text}")
     except Exception as e:
-        print(f"Exception during Perplexity fetch: {e}")
+        print(f"Exception during fetch: {e}")
     
     return None
 
 def check_and_add_new_trend():
-    global LAST_SCAN_TIME
     current_time = time.time()
+    db_data = load_database()
     
-    # Preveri vsake 2 minuti (120 sekund), ali je čas za nov trend
-    if current_time - LAST_SCAN_TIME > 120:
-        LAST_SCAN_TIME = current_time
-        print("--- Triggering live trend scan ---")
+    # Preveri, če je od zadnjega skeniranja minilo več kot 120 sekund (2 minuti)
+    if current_time - db_data["last_scan_time"] > 120:
+        print("Time threshold met. Triggering new scan...")
+        
+        # Takoj posodobi čas, da preprečiš hkratne klice
+        db_data["last_scan_time"] = current_time
+        save_database(db_data)
+        
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
             clean_trend_title = clean_text(new_data.get("trend"))
             
+            # Osnovna preverjanja ustreznosti
             if len(clean_trend_title.split()) <= 15:
                 lower_title = clean_trend_title.lower()
                 forbidden_words = ["earthquake", "potres", "death", "kill", "tragedy", "disaster", "accident", "war", "crash"]
@@ -112,9 +125,8 @@ def check_and_add_new_trend():
                     search_query = urllib.parse.quote(clean_trend_title)
                     safe_source_url = f"https://www.tiktok.com/search?q={search_query}"
 
-                    db = load_database()
                     new_item = {
-                        "id": len(db) + 1,
+                        "id": len(db_data["trends"]) + 1,
                         "trend": clean_trend_title,
                         "suggested_name": clean_text(new_data.get("suggested_name")),
                         "symbol": clean_text(new_data.get("symbol")),
@@ -122,16 +134,27 @@ def check_and_add_new_trend():
                         "source_url": safe_source_url
                     }
                     
-                    if not any(t['trend'].lower() == new_item['trend'].lower() for t in db):
-                        db.append(new_item)
-                        save_database(db)
-                        print(f"ADDED NEW TREND TO DATABASE: {new_item['trend']}")
+                    # Prepreči podvajanje vnosov
+                    if not any(t['trend'].lower() == new_item['trend'].lower() for t in db_data["trends"]):
+                        db_data["trends"].append(new_item)
+                        save_database(db_data)
+                        print(f"+++ ADDED NEW TREND: {new_item['trend']} +++")
+                    else:
+                        print("Trend already exists. Skipping.")
+                else:
+                    print("Unsafe words detected. Skipping.")
+            else:
+                 print("Trend title too long. Skipping.")
+    else:
+        # Prikaz časa preostalega do naslednjega skeniranja (v dnevniku boš videl, da se nekaj dogaja)
+        time_left = int(120 - (current_time - db_data["last_scan_time"]))
+        print(f"Skipping scan. Next scan allowed in {time_left} seconds.")
 
 @app.route("/api/trends", methods=["GET"])
 def get_trends():
     check_and_add_new_trend()
-    db = load_database()
-    return jsonify({"success": True, "trends": list(reversed(db))}), 200
+    db_data = load_database()
+    return jsonify({"success": True, "trends": list(reversed(db_data["trends"]))}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
