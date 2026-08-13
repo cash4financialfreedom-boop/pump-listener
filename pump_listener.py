@@ -5,6 +5,7 @@ import requests
 import json
 import urllib.parse
 import re
+import time
 from datetime import datetime
 
 app = Flask(__name__)
@@ -13,7 +14,6 @@ CORS(app)
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
 DB_FILE = "trends_database.json"
 
-# Časovni žig zadnjega skeniranja, da preprečimo prehitre klice
 LAST_SCAN_TIME = 0
 
 def load_database():
@@ -129,7 +129,6 @@ def check_and_add_new_trend():
 
 @app.route("/api/trends", methods=["GET"])
 def get_trends():
-    # Ob vsakem osveževanju strani preverimo, če je čas za nov trend
     check_and_add_new_trend()
     db = load_database()
     return jsonify({"success": True, "trends": list(reversed(db))}), 200
