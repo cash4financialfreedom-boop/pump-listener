@@ -17,18 +17,18 @@ AI_API_KEY = os.environ.get("AI_API_KEY", "")
 TRENDS_DATABASE = [
     {
         "id": 1,
-        "trend": "TikTok & Social Radar Active",
-        "suggested_name": "ViralTikTok",
-        "symbol": "TIK",
-        "description": "Scanning direct TikTok, Instagram and social media viral moments with verified source links.",
-        "source_url": "https://www.tiktok.com/explore",
-        "image_url": "https://image.pollinations.ai/prompt/funny%20viral%20tiktok%20animal%20meme,%20vibrant%20colors,4k"
+        "trend": "Viral TikTok Animals Radar",
+        "suggested_name": "Zoomies",
+        "symbol": "ZOOM",
+        "description": "Scanning hyper-viral animal clips and unhinged internet memes with guaranteed working search links.",
+        "source_url": "https://www.tiktok.com/search?q=viral+animals",
+        "image_url": "https://image.pollinations.ai/prompt/funny%20viral%20cat%20tiktok%20meme,%20vibrant%20colors,4k"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab Social Radar Backend is Running"
+    return "MemeCollab Safe Radar with Search Links is Running"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -49,11 +49,11 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": f"Today is {current_date}. You are an elite social media and viral trend hunter. STRICT SAFETY: No disasters, tragedies, wars, or accidents. ONLY focus on fun, lighthearted viral internet culture, TikTok/Instagram viral animal moments, funny memes, or amusing celebrity moments from the last 24 hours. CRITICAL: You MUST search the web and provide the exact direct URL to the TikTok video, Instagram reel, Reddit post, or news article in 'source_url'. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. No markdown formatting, no backticks."
+                "content": f"Today is {current_date}. You are an elite meme trend hunter. STRICT SAFETY: No disasters, tragedies, wars, or accidents. ONLY focus on fun, lighthearted viral internet culture, TikTok/Instagram viral animal moments, funny memes, or amusing celebrity moments from the last 24 hours. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, image_prompt. Do not include source_url. No markdown formatting, no backticks."
             },
             {
                 "role": "user",
-                "content": "Find one top viral TikTok animal, Instagram meme, or fun trend from the last 24 hours, get its exact direct URL (TikTok, IG, Reddit, or news), and turn it into a degen meme coin concept."
+                "content": "Find one top viral TikTok animal, meme, or fun trend from the last 24 hours and turn it into a degen meme coin concept."
             }
         ]
     }
@@ -73,7 +73,7 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Scanning TikTok and social media for direct viral links...")
+        print("Scanning for fresh viral animal & meme trends...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
@@ -88,10 +88,9 @@ def auto_news_scanner():
             raw_prompt = new_data.get("image_prompt", clean_trend_title)
             encoded_prompt = urllib.parse.quote(raw_prompt + ", funny high-impact crypto meme style, vibrant colors, 4k")
             
-            s_url = new_data.get("source_url", "https://www.tiktok.com/explore")
-            # Če AI vrne neveljaven ali prekratek URL, ga usmerimo na pametno iskanje
-            if len(s_url) < 15 or not ("tiktok.com" in s_url or "instagram.com" in s_url or "reddit.com" in s_url or "http" in s_url):
-                s_url = f"https://www.google.com/search?q={urllib.parse.quote(clean_trend_title + ' tiktok viral')}"
+            # Ustvarimo zanesljivo iskalno povezavo na TikTok za točno ta trend, ki nikoli ne vrne napake 404!
+            search_query = urllib.parse.quote(clean_trend_title)
+            safe_source_url = f"https://www.tiktok.com/search?q={search_query}"
 
             new_item = {
                 "id": len(TRENDS_DATABASE) + 1,
@@ -99,13 +98,13 @@ def auto_news_scanner():
                 "suggested_name": clean_text(new_data.get("suggested_name")),
                 "symbol": clean_text(new_data.get("symbol")),
                 "description": clean_text(new_data.get("description")),
-                "source_url": s_url,
+                "source_url": safe_source_url,
                 "image_url": f"https://image.pollinations.ai/prompt/{encoded_prompt}"
             }
             
             if not any(t['trend'].lower() == new_item['trend'].lower() for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added viral trend with social link: {new_item['trend']}")
+                print(f"Successfully added trend with safe search link: {new_item['trend']}")
 
         time.sleep(60)
 
