@@ -16,18 +16,18 @@ AI_API_KEY = os.environ.get("AI_API_KEY", "")
 TRENDS_DATABASE = [
     {
         "id": 1,
-        "trend": "TikTok Viral Cat Phenomenon",
-        "suggested_name": "Silly Cat Dance",
-        "symbol": "MEOW",
-        "description": "A chaotic viral cat meme taking over TikTok feeds and Instagram reels worldwide.",
-        "source_url": "https://www.tiktok.com",
-        "image_url": "https://image.pollinations.ai/prompt/funny%20viral%20cat%20dancing%20tiktok%20meme,%20vibrant%20colors,4k"
+        "trend": "Global Viral Megatrend",
+        "suggested_name": "MegaPump",
+        "symbol": "MEGA",
+        "description": "A top-tier meme coin capturing major viral headlines and internet hype worldwide.",
+        "source_url": "https://news.google.com",
+        "image_url": "https://image.pollinations.ai/prompt/epic%20viral%20news%20headline%20crypto%20meme,%20vibrant%20colors,4k"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab & Viral Vault Backend is Running with Viral/TikTok Radar"
+    return "MemeCollab & Viral Vault Backend is Running with Global & Meme Radar"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -47,11 +47,11 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": "You are an elite crypto meme trend hunter. Search specifically across TikTok, X (Twitter), Reddit (like r/memes, r/wallstreetbets), Instagram, and viral internet culture. Find a freshly trending viral meme, funny animal video, or internet drama right now. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short clean headline about the viral moment. 'source_url' must be a direct link to the viral post, TikTok, Reddit thread, or news article. No markdown formatting, no backticks."
+                "content": "You are an elite crypto meme and global trend hunter. Search across major breaking world news (like Trump, Elon Musk, tech, global shifts) AND viral internet culture (TikTok, X, Reddit). Find a high-impact viral story or breaking news event that has massive meme potential. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short clean headline. 'source_url' must be a direct link to the article or post. No markdown formatting, no backticks."
             },
             {
                 "role": "user",
-                "content": "Find one breaking viral internet meme, TikTok trend, or funny animal moment right now, get its exact source URL, and turn it into a top-tier degen meme coin concept."
+                "content": "Find one massive breaking world news story or viral internet trend right now, get its exact source URL, and turn it into a top-tier degen meme coin concept."
             }
         ]
     }
@@ -71,17 +71,17 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Scanning TikTok, Reddit, and X for fresh viral memes...")
+        print("Scanning global news & viral internet culture...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
             clean_trend_title = clean_text(new_data.get("trend"))
             raw_prompt = new_data.get("image_prompt", clean_trend_title)
-            encoded_prompt = urllib.parse.quote(raw_prompt + ", funny viral internet meme style, vibrant colors, 4k")
+            encoded_prompt = urllib.parse.quote(raw_prompt + ", funny high-impact crypto meme style, vibrant colors, 4k")
             
-            s_url = new_data.get("source_url", "https://reddit.com")
+            s_url = new_data.get("source_url", "https://news.google.com")
             if len(s_url) < 15 or s_url.count('/') < 3:
-                s_url = "https://reddit.com"
+                s_url = "https://news.google.com"
 
             new_item = {
                 "id": len(TRENDS_DATABASE) + 1,
@@ -95,7 +95,7 @@ def auto_news_scanner():
             
             if not any(t['trend'] == new_item['trend'] for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added viral meme trend: {new_item['trend']}")
+                print(f"Successfully added global/viral trend: {new_item['trend']}")
 
         time.sleep(60)
 
