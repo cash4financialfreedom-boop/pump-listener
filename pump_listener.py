@@ -16,18 +16,18 @@ AI_API_KEY = os.environ.get("AI_API_KEY", "")
 TRENDS_DATABASE = [
     {
         "id": 1,
-        "trend": "Mars Colonization Update",
-        "suggested_name": "Mars Rover Dog",
-        "symbol": "MRD",
-        "description": "The latest breakthrough in interplanetary exploration and canine space travel.",
-        "source_url": "https://www.nasa.gov",
-        "image_url": "https://image.pollinations.ai/prompt/cute%20dog%20astronaut%20on%20mars,%20crypto%20meme%20style,vibrant"
+        "trend": "TikTok Viral Cat Phenomenon",
+        "suggested_name": "Silly Cat Dance",
+        "symbol": "MEOW",
+        "description": "A chaotic viral cat meme taking over TikTok feeds and Instagram reels worldwide.",
+        "source_url": "https://www.tiktok.com",
+        "image_url": "https://image.pollinations.ai/prompt/funny%20viral%20cat%20dancing%20tiktok%20meme,%20vibrant%20colors,4k"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab & Viral Vault Backend is Running with Direct Links"
+    return "MemeCollab & Viral Vault Backend is Running with Viral/TikTok Radar"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -47,11 +47,11 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": "You are a crypto trend hunter. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short clean headline. 'source_url' MUST be the direct URL to the specific news article, never just a homepage like abcnews.com. No markdown formatting, no backticks."
+                "content": "You are an elite crypto meme trend hunter. Search specifically across TikTok, X (Twitter), Reddit (like r/memes, r/wallstreetbets), Instagram, and viral internet culture. Find a freshly trending viral meme, funny animal video, or internet drama right now. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description, source_url, image_prompt. 'trend' must be a short clean headline about the viral moment. 'source_url' must be a direct link to the viral post, TikTok, Reddit thread, or news article. No markdown formatting, no backticks."
             },
             {
                 "role": "user",
-                "content": "Find one major breaking viral news event right now, get its exact article URL for source_url, and turn it into a meme coin concept with a headline, name, symbol, description, and funny image_prompt."
+                "content": "Find one breaking viral internet meme, TikTok trend, or funny animal moment right now, get its exact source URL, and turn it into a top-tier degen meme coin concept."
             }
         ]
     }
@@ -71,18 +71,17 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Polling Perplexity for fresh viral news with direct links...")
+        print("Scanning TikTok, Reddit, and X for fresh viral memes...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
             clean_trend_title = clean_text(new_data.get("trend"))
             raw_prompt = new_data.get("image_prompt", clean_trend_title)
-            encoded_prompt = urllib.parse.quote(raw_prompt + ", funny crypto meme style, vibrant colors, 4k")
+            encoded_prompt = urllib.parse.quote(raw_prompt + ", funny viral internet meme style, vibrant colors, 4k")
             
-            # Preverimo, da je URL veljaven in specifičen
-            s_url = new_data.get("source_url", "https://news.google.com")
+            s_url = new_data.get("source_url", "https://reddit.com")
             if len(s_url) < 15 or s_url.count('/') < 3:
-                s_url = "https://news.google.com"
+                s_url = "https://reddit.com"
 
             new_item = {
                 "id": len(TRENDS_DATABASE) + 1,
@@ -96,7 +95,7 @@ def auto_news_scanner():
             
             if not any(t['trend'] == new_item['trend'] for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added trend with direct link: {new_item['trend']}")
+                print(f"Successfully added viral meme trend: {new_item['trend']}")
 
         time.sleep(60)
 
