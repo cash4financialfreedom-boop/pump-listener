@@ -113,11 +113,9 @@ def run_scanner_job():
 
 def auto_news_scanner():
     print("Background scanner thread started.")
-    # Takoj ob zagonu počakaj samo 5 sekund in poženi prvo iskanje!
-    time.sleep(5)
+    time.sleep(10)
     run_scanner_job()
     
-    # Nato ponavljaj vsaki 2 minuti (120 sekund)
     while True:
         time.sleep(120)
         run_scanner_job()
