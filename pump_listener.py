@@ -17,17 +17,17 @@ AI_API_KEY = os.environ.get("AI_API_KEY", "")
 TRENDS_DATABASE = [
     {
         "id": 1,
-        "trend": "Viral TikTok Animals Radar",
-        "suggested_name": "Zoomies",
-        "symbol": "ZOOM",
-        "description": "Scanning hyper-viral animal clips and unhinged internet memes with guaranteed working search links.",
-        "source_url": "https://www.tiktok.com/search?q=viral+animals"
+        "trend": "Early Viral Trend Radar Active",
+        "suggested_name": "EarlyPulse",
+        "symbol": "EARLY",
+        "description": "Scanning fresh TikTok, Instagram, and breaking lighthearted global news with strong early traction.",
+        "source_url": "https://www.tiktok.com/search?q=viral+trending"
     }
 ]
 
 @app.route("/", methods=["GET"])
 def home():
-    return "MemeCollab Clean Radar is Running"
+    return "MemeCollab Clean Omni-Radar is Running"
 
 def clean_text(text):
     return re.sub(r'\[\d+\]', '', text).strip()
@@ -48,11 +48,10 @@ def fetch_real_trend_from_perplexity():
         "messages": [
             {
                 "role": "system",
-                "content": f"Today is {current_date}. You are an elite meme trend hunter. STRICT SAFETY: No disasters, tragedies, wars, or accidents. ONLY focus on fun, lighthearted viral internet culture, TikTok/Instagram viral animal moments, funny memes, or amusing celebrity moments from the last 24 hours. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description. No markdown formatting, no backticks."
+                "content": f"Today is {current_date}. You are an elite meme coin and trend hunter. Look for brand new, rising viral internet memes, TikTok/Instagram animal clips starting to trend, or lighthearted breaking global news (like Trump, Elon Musk funny or viral moments) from the last 24 hours. SAFETY RULE: NEVER select earthquakes, disasters, accidents, deaths, tragedies, wars, or heavy suffering. ONLY focus on fun, viral, early-stage traction content. Return ONLY a raw JSON object with keys: trend, suggested_name, symbol, description. No markdown formatting, no backticks."
             },
             {
-                "role": "user",
-                "content": "Find one top viral TikTok animal, meme, or fun trend from the last 24 hours and turn it into a degen meme coin concept."
+                "user": "Find one fresh, early-rising viral TikTok, Instagram, or lighthearted global news trend starting to gain traction and turn it into a meme coin concept."
             }
         ]
     }
@@ -72,12 +71,16 @@ def fetch_real_trend_from_perplexity():
 
 def auto_news_scanner():
     while True:
-        print("Scanning for fresh viral animal & meme trends...")
+        print("Scanning for fresh early-stage viral trends & news...")
         new_data = fetch_real_trend_from_perplexity()
         
         if new_data and "trend" in new_data:
             clean_trend_title = clean_text(new_data.get("trend"))
             
+            if "content" in clean_trend_title.lower() or len(clean_trend_title.split()) > 15:
+                time.sleep(10)
+                continue
+
             lower_title = clean_trend_title.lower()
             forbidden_words = ["earthquake", "potres", "death", "kill", "tragedy", "disaster", "accident", "war", "crash"]
             if any(word in lower_title for word in forbidden_words):
@@ -97,7 +100,7 @@ def auto_news_scanner():
             
             if not any(t['trend'].lower() == new_item['trend'].lower() for t in TRENDS_DATABASE):
                 TRENDS_DATABASE.append(new_item)
-                print(f"Successfully added clean trend: {new_item['trend']}")
+                print(f"Successfully added clean early trend: {new_item['trend']}")
 
         time.sleep(60)
 
