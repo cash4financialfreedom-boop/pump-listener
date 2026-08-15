@@ -27,21 +27,23 @@ def send_to_n8n(trend_data):
             "twitter": trend_data.get("twitter", ""),
             "address": trend_data.get("address", "PlaceholderSolanaAddress123")
         }
+        print(f"INFO: Sending data to n8n for token: {payload['name']} (Market Cap: ${payload['market_cap']})")
         response = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
         if response.status_code == 200:
-            print("SUCCESS: Data successfully sent to n8n!")
+            print("SUCCESS: Data successfully sent and received by n8n!")
         else:
             print(f"WARNING: n8n responded with status code {response.status_code}")
     except Exception as e:
-        print(f"Error sending data to n8n: {e}")
+        print(f"ERROR: Failed sending data to n8n: {e}")
 
 @app.route("/api/trends", methods=["GET"])
 def get_trends():
     """API endpoint that returns current trends and handles simulation/addition."""
+    print("INFO: Received request on /api/trends endpoint...")
     try:
-        # Example logic for adding a trend if data is passed via request
         data = request.args.to_dict()
         if data:
+            print(f"INFO: Found incoming trend parameters: {data}")
             data["suggested_name"] = clean_search_term(data.get("suggested_name", "Meme"))
             data["description"] = clean_search_term(data.get("description", ""))
             
@@ -54,9 +56,11 @@ def get_trends():
             # Send the new trend directly to n8n workflow
             send_to_n8n(data)
             
-            print(f"SUCCESS: Added ultra-fresh 1-5 day trend")
+            print(f"SUCCESS: Added ultra-fresh 1-5 day trend: {data['suggested_name']}")
+        else:
+            print("INFO: /api/trends called, but no query parameters provided.")
     except Exception as e:
-        print(f"Error during generation: {e}")
+        print(f"ERROR: Exception during trend processing: {e}")
 
     return jsonify({"success": True, "trends": TRENDS})
 
@@ -65,4 +69,5 @@ def home():
     return "Pump.fun Fresh Alpha Radar is active."
 
 if __name__ == "__main__":
+    print("INFO: Starting Pump.fun listener service on port 10000...")
     app.run(host="0.0.0.0", port=10000)
