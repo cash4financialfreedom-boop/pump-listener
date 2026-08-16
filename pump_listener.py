@@ -44,8 +44,8 @@ def fetch_and_push_trends():
                             twitter_url = social.get("url")
                             break
                     
-                    # Filters: Market cap between 10,000 and 150,000, and Twitter exists
-                    if 10000 <= market_cap <= 150000 and twitter_url:
+                    # Filter removed: now checking only if Twitter exists to ensure a steady flow of data
+                    if twitter_url:
                         payload = {
                             "name": f"{name} ({symbol})",
                             "market_cap": str(market_cap),
