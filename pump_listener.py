@@ -1,73 +1,98 @@
 import os
-import urllib.parse
-from flask import Flask, jsonify, request
+import time
+import threading
 import requests
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# In-memory storage for trends
-TRENDS = []
+# Configuration from environment variables
+N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "INSERT_N8N_WEBHOOK_URL_HERE")
 
-# YOUR n8n Webhook URL (Production URL)
-N8N_WEBHOOK_URL = "https://n8n-app-ok4t.onrender.com/webhook/pump-data"
+# Storage to avoid sending the same token multiple times
+processed_tokens = set()
 
-def clean_search_term(text):
-    """Clean and format text for searching."""
-    if not text:
-        return ""
-    return text.strip().replace('"', '')
+def fetch_and_push_trends():
+    """Background loop that periodically checks the market and pushes data to n8n."""
+    while True:
+        try:
+            print("Checking market for new tokens...")
+            url = "https://api.dexscreener.com/latest/dex/search?q=solana"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                pairs = data.get("pairs", [])
+                
+                for pair in pairs[:20]:  # Review the first 20 results
+                    token_address = pair.get("baseToken", {}).get("address")
+                    
+                    if not token_address or token_address in processed_tokens:
+                        continue
+                        
+                    # Extract data
+                    market_cap = float(pair.get("marketCap") or pair.get("fdv") or 0)
+                    name = pair.get("baseToken", {}).get("name", "Unknown")
+                    symbol = pair.get("baseToken", {}).get("symbol", "UNKNOWN")
+                    
+                    # Check for Twitter / X socials
+                    info = pair.get("info", {})
+                    socials = info.get("socials", [])
+                    twitter_url = ""
+                    for social in socials:
+                        if social.get("type") == "twitter":
+                            twitter_url = social.get("url")
+                            break
+                    
+                    # Filters: Market cap between 10,000 and 150,000, and Twitter exists
+                    if 10000 <= market_cap <= 150000 and twitter_url:
+                        payload = {
+                            "name": f"{name} ({symbol})",
+                            "market_cap": str(market_cap),
+                            "market_cap_phase": "Early",
+                            "twitter": twitter_url,
+                            "source_url": pair.get("url", "")
+                        }
+                        
+                        # Send data to n8n Webhook
+                        webhook_res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=10)
+                        if webhook_res.status_code == 200:
+                            print(f"Successfully sent token to n8n: {name}")
+                            processed_tokens.add(token_address)
+                            
+            else:
+                print(f"API error: {response.status_code}")
+                
+        except Exception as e:
+            print(f"Error in background loop: {e}")
+            
+        # Wait 60 seconds before the next check
+        time.sleep(60)
 
-def send_to_n8n(trend_data):
-    """Automatically push new trend data to n8n webhook."""
-    try:
-        payload = {
-            "name": trend_data.get("suggested_name", "Meme Coin"),
-            "description": trend_data.get("description", ""),
-            "market_cap": trend_data.get("market_cap", 75000),  # Default or fetched value
-            "twitter": trend_data.get("twitter", ""),
-            "address": trend_data.get("address", "PlaceholderSolanaAddress123")
-        }
-        print(f"INFO: Sending data to n8n for token: {payload['name']} (Market Cap: ${payload['market_cap']})")
-        response = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
-        if response.status_code == 200:
-            print("SUCCESS: Data successfully sent and received by n8n!")
-        else:
-            print(f"WARNING: n8n responded with status code {response.status_code}")
-    except Exception as e:
-        print(f"ERROR: Failed sending data to n8n: {e}")
+@app.route("/", methods=["GET"])
+def home():
+    return "Pump Listener is active and running!"
 
 @app.route("/api/trends", methods=["GET"])
-def get_trends():
-    """API endpoint that returns current trends and handles simulation/addition."""
-    print("INFO: Received request on /api/trends endpoint...")
-    try:
-        data = request.args.to_dict()
-        if data:
-            print(f"INFO: Found incoming trend parameters: {data}")
-            data["suggested_name"] = clean_search_term(data.get("suggested_name", "Meme"))
-            data["description"] = clean_search_term(data.get("description", ""))
-            
-            query_string = urllib.parse.quote(data["description"])
-            data["source_url"] = f"https://www.tiktok.com/search?q={query_string}"
-            
-            data["id"] = len(TRENDS) + 1
-            TRENDS.insert(0, data)
-            
-            # Send the new trend directly to n8n workflow
-            send_to_n8n(data)
-            
-            print(f"SUCCESS: Added ultra-fresh 1-5 day trend: {data['suggested_name']}")
-        else:
-            print("INFO: /api/trends called, but no query parameters provided.")
-    except Exception as e:
-        print(f"ERROR: Exception during trend processing: {e}")
-
-    return jsonify({"success": True, "trends": TRENDS})
-
-@app.route("/")
-def home():
-    return "Pump.fun Fresh Alpha Radar is active."
+def manual_trend():
+    """Manual endpoint for browser testing."""
+    sample_data = {
+        "success": True,
+        "trends": [{
+            "id": 1,
+            "description": "Cute dog meme coin trending on tiktok today",
+            "market_cap": "50000",
+            "twitter": "https://x.com/test",
+            "source_url": "https://www.tiktok.com/search?q=TestCoin"
+        }]
+    }
+    return jsonify(sample_data)
 
 if __name__ == "__main__":
-    print("INFO: Starting Pump.fun listener service on port 10000...")
-    app.run(host="0.0.0.0", port=10000)
+    # Start the background loop in a separate thread so the Flask server works normally
+    t = threading.Thread(target=fetch_and_push_trends, daemon=True)
+    t.start()
+    
+    # Start the Flask application
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
